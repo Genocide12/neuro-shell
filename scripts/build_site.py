@@ -5,7 +5,7 @@ import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 
 
 def read(name: str) -> str:
