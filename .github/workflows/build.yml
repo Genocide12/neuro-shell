@@ -21,6 +21,11 @@ jobs:
       - name: Build site
         run: python3 scripts/build_site.py
 
+      - name: Check JavaScript syntax
+        run: |
+          node --check src/app.js
+          node --check src/jarvis.js
+
       - name: Build NeuroShell.exe
         run: |
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
