@@ -2,7 +2,7 @@
 'use strict';
 
 /* ================== КОНФИГ И ПРЕСЕТЫ ================== */
-const NS_VERSION = '1.3.0';
+const NS_VERSION = '1.4.0';
 const LS_PREFIX = 'neuroshell:';
 
 const PRESETS = {
@@ -148,10 +148,33 @@ function onBridgeReady(){
   try {
     applySettingsToUI();
     updateStat();
+    maybeAutoAgent();
   } catch(e){}
 }
 window.NS_BRIDGE_READY = onBridgeReady;
 window.addEventListener('nsbridge', onBridgeReady);
+
+// maybeAutoAgent — при первом запуске настольной версии сразу предлагает
+// включить режим агента (файлы + GitHub) с доступом «весь компьютер».
+// Пользователь один раз видит вопрос — больше не спрашиваем.
+function maybeAutoAgent(){
+  if (!isExeMode()) return;
+  if (store.get('agentPrompted', false)) return;
+  store.set('agentPrompted', true);
+  setTimeout(() => {
+    confirmDialog(
+      'Включить режим агента?\n\nМодель получит инструменты: чтение, запись и поиск файлов на этом компьютере (режим «весь компьютер» — любые диски и папки, абсолютные пути) и работу с GitHub по токену (задаётся в настройках).\n\nПеред удалением и перезаписью файлов модель спрашивает подтверждение. Отключить можно в настройках (Инструменты).',
+      ok => {
+        if (!ok) return;
+        settings.agentMode = true;
+        settings.fsMode = 'full';
+        persist();
+        applySettingsToUI();
+        toast('Режим агента включён: файлы всего компьютера доступны модели', 'ok', 5000);
+      }
+    );
+  }, 700);
+}
 
 /* ================== ЦЕНЫ НА ТОКЕНЫ ================== */
 // Встроенные тарифы — $ за 1 млн токенов (вход/выход): официальные цены
@@ -370,7 +393,7 @@ function agentToolDefs(){
 // agentSystemAddendum — правила инструментов, дописываемые к системному промпту
 function agentSystemAddendum(){
   if (!agentActive()) return '';
-  let s = '\n\nИНСТРУМЕНТЫ (режим агента)\nУ тебя есть инструменты (function calling) — используй их сам, не проси пользователя «скопировать содержимое файла» или «перейти по ссылке».';
+  let s = '\n\nИНСТРУМЕНТЫ (режим агента)\nУ тебя есть инструменты — используй их сам, не проси пользователя «скопировать содержимое файла» или «перейти по ссылке». Никогда не говори «не могу открыть папку/файл на вашем компьютере» — ты МОЖЕШЬ: вызывай инструменты fs_* с нужным путём.';
   if (fsToolsAvailable()){
     if (fsFullMode()){
       s += '\n- Файлы компьютера — доступен ВЕСЬ компьютер (любые диски и папки): fs_drives, fs_list, fs_read, fs_write, fs_mkdir, fs_delete, fs_move, fs_search. Пути — только абсолютные (например «C:\\Users\\Gennadiy\\Desktop\\Next Claud\\skills» или «/home/user/docs»). Не знаешь точный путь — вызови fs_drives или fs_list домашней папки и ориентируйся по ответам. Ты действуешь как обычная программа на компьютере пользователя: не проси «загрузить файл в чат» — читай его с диска сам.';
@@ -381,6 +404,7 @@ function agentSystemAddendum(){
   if (ghToolsAvailable()){
     s += '\n- GitHub' + (settings.ghUser ? ' (аккаунт ' + settings.ghUser + ')' : '') + ': gh_me, gh_repos, gh_read, gh_write, gh_delete, gh_create_repo' + (fsToolsAvailable() ? ', gh_clone (скачать репозиторий в папку' + (fsFullMode() ? ' на компьютере' : ' рабочей папки') + ')' : '') + '.';
   }
+  s += '\n\nВЫЗОВ ИНСТРУМЕНТОВ\n- Если в этом запросе доступен механизм function calling (tool_calls) — используй его.\n- Если function calling недоступен — вызывай инструменты ТЕКСТОМ, отдельным блоком ровно в таком формате (без код-блоков, без лишнего текста внутри):\n<<<TOOL>>>\n{"tool":"fs_read","args":{"path":"C:\\Users\\user\\file.txt"}}\n<<<END>>>\n- Несколько вызовов за раз — массивом: {"calls":[{"tool":"...","args":{}},{"tool":"...","args":{}}]}.\n- После блока вызова СРАЗУ ОСТАНОВИСЬ. Приложение выполнит вызовы и пришлёт результаты сообщением, начинающимся с «[TOOL RESULTS]». Получив их, продолжай: новый вызов или финальный ответ.\n- Внутри args пути Windows пишутся с двойным слэшем JSON: "C:\\Users\\...".';
   s += '\nПравила:\n- Обычные действия (чтение, поиск, создание новых файлов) выполняй сразу, без лишних вопросов.\n- Перед удалением, перезаписью существующих файлов, коммитами в GitHub и другими необратимыми действиями коротко спроси подтверждение.\n- Результаты инструментов не выдумывай: что вернул вызов — то и есть. Ошибка инструмента — расскажи о ней.\n- После работы с файлами дай краткий итог: что сделано и где лежит.';
   return s;
 }
@@ -535,6 +559,80 @@ async function runAgentTool(call){
   catch(e){ out = { ok: false, result: 'Ошибка: ' + (e && e.message ? e.message : String(e)) }; }
   if (out.result && out.result.length > 60000) out.result = out.result.slice(0, 60000) + '\n…(результат обрезан)';
   return out;
+}
+
+/* ---- текстовый протокол вызова инструментов ----
+   Резервный канал для API без OpenAI function calling: модель выводит
+   блоки <<<TOOL>>> {json} <<<END>>>, приложение парсит и исполняет их,
+   результат возвращается в чат сообщением «[TOOL RESULTS]». Так инструменты
+   работают с любым сервером и любой моделью. */
+
+// extractJsonAt — вырезает сбалансированный JSON-объект, начиная с s[idx] = '{'.
+// Учитывает строки и экранирование; возвращает { raw, end } или null.
+function extractJsonAt(s, idx){
+  if (s[idx] !== '{') return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = idx; i < s.length; i++){
+    const ch = s[i];
+    if (esc){ esc = false; continue; }
+    if (inStr){
+      if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}'){
+      depth--;
+      if (depth === 0) return { raw: s.slice(idx, i + 1), end: i + 1 };
+    }
+  }
+  return null;
+}
+
+// parseToolTextCalls — ищет в ответе модели текстовые вызовы инструментов.
+// Возвращает { calls: [{id,name,args}], cleaned }: cleaned — текст без блоков
+// вызовов (для отображения). Форматы блока: <<<TOOL>>> {json} <<<END>>>,
+// <<<TOOL_CALL>>> {json}; один объект, массив или {"calls":[...]}.
+function parseToolTextCalls(content){
+  const s = String(content || '');
+  const calls = [];
+  const parts = [];
+  let last = 0;
+  const re = /<<<\s*TOOL(?:_CALL)?\s*>>>/g;
+  let m;
+  while ((m = re.exec(s)) !== null){
+    let i = m.index + m[0].length;
+    while (i < s.length && /\s/.test(s[i])) i++;
+    const jb = i < s.length ? extractJsonAt(s, i) : null;
+    if (!jb) continue; // маркер без валидного JSON — не вызов, текст не трогаем
+    let parsed = null;
+    try { parsed = JSON.parse(jb.raw); } catch(e){}
+    if (!parsed) continue;
+    const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.calls) ? parsed.calls : [parsed]);
+    let got = false;
+    for (const c of arr){
+      const name = c && (c.tool || c.name);
+      if (typeof name === 'string' && name){
+        calls.push({ id: 'txt' + uid(), name, args: JSON.stringify(c.args != null ? c.args : (c.arguments != null ? c.arguments : {})) });
+        got = true;
+      }
+    }
+    if (!got) continue;
+    let cutEnd = jb.end;
+    const em = /^\s*<<<\s*END(?:\s*TOOL)?\s*>>>/.exec(s.slice(cutEnd));
+    if (em) cutEnd += em[0].length;
+    parts.push(s.slice(last, m.index));
+    last = cutEnd;
+    re.lastIndex = cutEnd;
+  }
+  if (!calls.length) return { calls: [], cleaned: s };
+  parts.push(s.slice(last));
+  const cleaned = parts.join('')
+    .replace(/^[ \t]*<<<\s*END(?:\s*TOOL)?\s*>>>[ \t]*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { calls, cleaned };
 }
 
 // toolArgSummary — короткая подпись аргументов для карточки в чате
@@ -996,6 +1094,19 @@ async function sendMessage(){
     return;
   }
 
+  // подсказка: сообщение похоже на работу с файлами, а режим агента не активен
+  if (!agentActive()){
+    const wantsFs = /[A-Za-z]:[\\/][^\s"']*/.test(text)
+      || /\/(?:home|Users|mnt|media)\/\S+/.test(text)
+      || /\bskills?\b/i.test(text);
+    if (wantsFs){
+      toast(isExeMode()
+        ? 'Похоже, вы просите модель работать с файлами. Включите режим агента: Настройки → Инструменты'
+        : 'Веб-версия не имеет доступа к файлам компьютера — скачайте NeuroShell.exe (Releases): в ней модель читает файлы сама',
+        'warn', 9000);
+    }
+  }
+
   const chat = ensureChat();
   const userMsg = { role: 'user', content: text };
   if (attachments.length) userMsg.attchs = attachments.slice();
@@ -1036,7 +1147,9 @@ function regenerate(idx){
 // requestChat выполняет запрос к /chat/completions. Если строгий прокси не принял
 // поле stream_options (расход токенов в стриме) или tools (function calling) —
 // повторяет без него, чтобы режим агента работал и на «капризных» серверах.
-async function requestChat(url, fetchOpts, body){
+// state.toolsDropped = true, если сервер отказался от tools: дальше работают
+// только текстовые вызовы инструментов (<<<TOOL>>>), и мы не шлём tools зря.
+async function requestChat(url, fetchOpts, body, state){
   let cur = Object.assign({}, body);
   while (true){
     const opts = Object.assign({}, fetchOpts, { body: JSON.stringify(cur) });
@@ -1050,6 +1163,7 @@ async function requestChat(url, fetchOpts, body){
     if (cur.tools && /tool|function/i.test(errText)){
       delete cur.tools;
       delete cur.tool_choice;
+      if (state) state.toolsDropped = true;
       continue;
     }
     throw new Error('HTTP ' + resp.status + (errText ? ' — ' + errText.slice(0, 500) : ''));
@@ -1082,13 +1196,21 @@ function buildApiMessages(chat){
       if (m.toolRounds && m.toolRounds.length){
         for (const r of m.toolRounds){
           if (r.calls && r.calls.length){
-            msgs.push({
-              role: 'assistant',
-              content: r.content || '',
-              tool_calls: r.calls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.args || '{}' } }))
-            });
-            for (const c of r.calls){
-              msgs.push({ role: 'tool', tool_call_id: c.id, name: c.name, content: String(c.result != null ? c.result : '(нет результата)') });
+            if (r.proto === 'text'){
+              // текстовый протокол: воспроизводим как модель выводила (с блоками),
+              // результат — сообщением пользователя от имени приложения
+              msgs.push({ role: 'assistant', content: r.raw || r.content || '' });
+              const res = r.calls.map(c => '### ' + c.name + '\n' + String(c.result != null ? c.result : '(нет результата)')).join('\n\n');
+              msgs.push({ role: 'user', content: '[TOOL RESULTS — результаты выполнения твоих вызовов инструментов]\n' + res + '\n\n[Продолжай: следующий вызов (тем же текстовым форматом <<<TOOL>>>) или финальный ответ пользователю.]' });
+            } else {
+              msgs.push({
+                role: 'assistant',
+                content: r.content || '',
+                tool_calls: r.calls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.args || '{}' } }))
+              });
+              for (const c of r.calls){
+                msgs.push({ role: 'tool', tool_call_id: c.id, name: c.name, content: String(c.result != null ? c.result : '(нет результата)') });
+              }
             }
           } else if (r.content){
             msgs.push({ role: 'assistant', content: r.content });
@@ -1136,8 +1258,9 @@ async function runCompletion(chat, atts){
     const toolDefs = agentActive() ? agentToolDefs() : [];
     let uInSum = null, uOutSum = null; // фактический расход (сумма по итерациям)
     const url = apiBase() + '/chat/completions';
-    const MAX_ROUNDS = 12;
+    const MAX_ROUNDS = 24;
     let hitLimit = false;
+    let toolsDropped = false; // сервер отказался от tools — остаётся текстовый протокол
 
     for (let round = 1; round <= MAX_ROUNDS; round++){
       const body = {
@@ -1149,7 +1272,7 @@ async function runCompletion(chat, atts){
       // просим сервер прислать фактический расход токенов прямо в стриме
       // (нестрогие прокси поле просто игнорируют)
       if (settings.stream) body.stream_options = { include_usage: true };
-      if (toolDefs.length){ body.tools = toolDefs; body.tool_choice = 'auto'; }
+      if (toolDefs.length && !toolsDropped){ body.tools = toolDefs; body.tool_choice = 'auto'; }
 
       const fetchOpts = { method: 'POST', headers: apiHeaders() };
       if (abortCtl) fetchOpts.signal = abortCtl.signal;
@@ -1159,9 +1282,14 @@ async function runCompletion(chat, atts){
       let usage = null;      // расход этой итерации
       let content = '';      // текст ответа итерации
       let calls = [];        // вызовы инструментов (аккумулируются из стрима)
+      const reqState = { toolsDropped: false };
 
       if (settings.stream){
-        const resp = await requestChat(url, fetchOpts, body);
+        const resp = await requestChat(url, fetchOpts, body, reqState);
+        if (reqState.toolsDropped){
+          toolsDropped = true;
+          toast('Сервер не поддерживает function calling — инструменты работают через текстовый протокол', '', 5000);
+        }
         setConn('ok');
         const reader = resp.body.getReader();
         const dec = new TextDecoder();
@@ -1203,14 +1331,21 @@ async function runCompletion(chat, atts){
           if (t - lastRender > 60){
             lastRender = t;
             ph.content = content;
+            // во время стрима служебные блоки <<<TOOL>>> в чате не показываем
+            let show = content;
+            if (show.indexOf('<<<') >= 0) show = parseToolTextCalls(show).cleaned;
             const b = el.querySelector('.md');
-            if (b) b.innerHTML = toolCardsHtml(ph) + renderMarkdown(content);
+            if (b) b.innerHTML = toolCardsHtml(ph) + renderMarkdown(show);
             if (nearBottom()) scrollBottom();
           }
         }
         calls = acc.filter(c => c && c.name);
       } else {
-        const resp = await requestChat(url, fetchOpts, body);
+        const resp = await requestChat(url, fetchOpts, body, reqState);
+        if (reqState.toolsDropped){
+          toolsDropped = true;
+          toast('Сервер не поддерживает function calling — инструменты работают через текстовый протокол', '', 5000);
+        }
         setConn('ok');
         const j = await resp.json();
         if (j.usage) usage = j.usage;
@@ -1233,9 +1368,31 @@ async function runCompletion(chat, atts){
         if (pout != null) uOutSum = (uOutSum || 0) + pout;
       }
 
+      // текстовый протокол: нативных tool_calls не пришло — ищем блоки <<<TOOL>>>
+      // (так инструменты работают даже на серверах без function calling)
+      let roundProto = 'native';
+      if (!calls.length && content){
+        const tp = parseToolTextCalls(content);
+        if (tp.calls.length){
+          calls = tp.calls;
+          roundProto = 'text';
+        }
+      }
+      // если пришли нативные вызовы, а в тексте затесался и текстовый блок — чистим показ
+      let roundRaw = content;
+      if (calls.length && content && content.indexOf('<<<') >= 0){
+        const tp2 = parseToolTextCalls(content);
+        if (tp2.calls.length){
+          if (roundProto === 'text') roundRaw = content; // raw = исходный текст с блоками
+          content = tp2.cleaned;
+        }
+      }
+
       // итерация с инструментами: выполнить и продолжить цикл
       if (calls.length && !(abortCtl && abortCtl.signal.aborted)){
-        const r = { content, calls };
+        const r = roundProto === 'text'
+          ? { content, raw: roundRaw, calls, proto: 'text' }
+          : { content, calls };
         ph.toolRounds.push(r);
         ph.content = '';
         for (const c of r.calls){
