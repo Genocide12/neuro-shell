@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""NeuroShell :: сборка одностраничного index.html из исходников src/.
-
-Запуск:  python3 scripts/build_site.py
-Результат пишется в index.html в корне репозитория (его же отдаёт
-GitHub Pages и встраивает в exe команда go:embed).
-"""
+"""NeuroShell :: build the single-page site from src/."""
 import pathlib
 import re
 
@@ -16,10 +11,11 @@ def read(name: str) -> str:
     return (SRC / name).read_text(encoding="utf-8")
 
 
-css = re.sub(r"/\*.*?\*/", "", read("style.css"), flags=re.S).strip()  # без комментариев
+css = re.sub(r"/\*.*?\*/", "", read("style.css"), flags=re.S).strip()
 body = read("body.html").strip()
 bridge = read("bridge.js").strip()
 app = read("app.js").strip()
+jarvis = read("jarvis.js").strip()
 
 FAVICON = (
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' "
@@ -43,26 +39,30 @@ TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 @@BODY@@
-
 <script>
 @@BRIDGE@@
 </script>
 <script>
 @@APP@@
 </script>
+<script>
+@@JARVIS@@
+</script>
 </body>
 </html>
 """
 
 html = TEMPLATE
-html = html.replace("@@FAVICON@@", FAVICON)
-html = html.replace("@@CSS@@", css)
-html = html.replace("@@BODY@@", body)
-html = html.replace("@@BRIDGE@@", bridge)
-html = html.replace("@@APP@@", app)
+for marker, value in {
+    "@@FAVICON@@": FAVICON,
+    "@@CSS@@": css,
+    "@@BODY@@": body,
+    "@@BRIDGE@@": bridge,
+    "@@APP@@": app,
+    "@@JARVIS@@": jarvis,
+}.items():
+    html = html.replace(marker, value)
 
-# Пишем обе копии: корневой index.html отдаёт GitHub Pages,
-# а internal/site/index.html встраивается в exe (go:embed).
 for out in (ROOT / "index.html", ROOT / "internal" / "site" / "index.html"):
     out.write_text(html, encoding="utf-8")
-print(f"OK: index.html собран ({len(html):,} байт) -> корень + internal/site")
+print(f"OK: index.html built ({len(html):,} bytes) -> root + internal/site")
