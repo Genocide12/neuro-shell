@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""NeuroShell :: build the single-page site from src/."""
+"""Build NeuroShell's single-file website from src/."""
 import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
+VERSION = "1.4.2"
 
 
 def read(name: str) -> str:
@@ -18,6 +19,7 @@ monitor = read("error-monitor.js").strip()
 app = read("app.js").strip()
 jarvis = read("jarvis.js").strip()
 queue = read("queue.js").strip()
+version_script = read("version.js").strip()
 
 FAVICON = (
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' "
@@ -41,6 +43,7 @@ TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 @@BODY@@
+<script>window.NS_RELEASE_VERSION = "@@VERSION@@";</script>
 <script>
 @@BRIDGE@@
 </script>
@@ -56,13 +59,16 @@ TEMPLATE = """<!DOCTYPE html>
 <script>
 @@QUEUE@@
 </script>
+<script>
+@@VERSION_SCRIPT@@
+</script>
 </body>
 </html>
 """
 
-html = TEMPLATE
-for marker, value in {
+replacements = {
     "@@FAVICON@@": FAVICON,
+    "@@VERSION@@": VERSION,
     "@@CSS@@": css,
     "@@BODY@@": body,
     "@@BRIDGE@@": bridge,
@@ -70,9 +76,12 @@ for marker, value in {
     "@@APP@@": app,
     "@@JARVIS@@": jarvis,
     "@@QUEUE@@": queue,
-}.items():
+    "@@VERSION_SCRIPT@@": version_script,
+}
+html = TEMPLATE
+for marker, value in replacements.items():
     html = html.replace(marker, value)
 
 for out in (ROOT / "index.html", ROOT / "internal" / "site" / "index.html"):
     out.write_text(html, encoding="utf-8")
-print(f"OK: index.html built ({len(html):,} bytes) -> root + internal/site")
+print(f"OK: NeuroShell {VERSION} built ({len(html):,} bytes)")
