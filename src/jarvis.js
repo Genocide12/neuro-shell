@@ -56,37 +56,34 @@
   let listening = false;
   let restarting = false;
   let baseText = '';
-  let restartTimer = 0;
+  let committedText = '';
   let previousFinals = [];
+  let restartTimer = 0;
 
   const normalize = text => String(text || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru-RU');
-  const transcriptNow = () => {
+  const renderTranscript = event => {
     const finals = [];
     let interim = '';
-    for (let i = 0; i < recognition.results.length; i++) {
-      const result = recognition.results[i];
+    for (let i = 0; i < event.results.length; i++) {
+      const result = event.results[i];
       const text = result[0] && result[0].transcript ? result[0].transcript.trim() : '';
       if (!text) continue;
       if (result.isFinal) finals.push(text);
       else interim = text;
     }
-    // Some engines repeat the last final result after a recognition restart.
+
+    // Engines may resend earlier final segments after restarting recognition.
     let overlap = 0;
-    const max = Math.min(previousFinals.length, finals.length);
-    for (let size = max; size > 0; size--) {
+    for (let size = Math.min(previousFinals.length, finals.length); size > 0; size--) {
       if (previousFinals.slice(-size).map(normalize).join(' ') === finals.slice(0, size).map(normalize).join(' ')) {
         overlap = size;
         break;
       }
     }
     const fresh = finals.slice(overlap);
+    if (fresh.length) committedText = [committedText, ...fresh].filter(Boolean).join(' ');
     previousFinals = finals.slice(-8);
-    return { final: fresh.join(' '), interim };
-  };
-  const renderTranscript = () => {
-    const result = transcriptNow();
-    const current = [baseText, result.final, result.interim].filter(Boolean).join(' ');
-    input.value = current;
+    input.value = [baseText, committedText, interim].filter(Boolean).join(' ');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
@@ -131,6 +128,7 @@
       return;
     }
     baseText = input.value.trim();
+    committedText = '';
     previousFinals = [];
     listening = true;
     try { recognition.start(); }
