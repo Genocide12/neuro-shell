@@ -14,6 +14,7 @@ def read(name: str) -> str:
 css = re.sub(r"/\*.*?\*/", "", read("style.css"), flags=re.S).strip()
 body = read("body.html").strip()
 bridge = read("bridge.js").strip()
+monitor = read("error-monitor.js").strip()
 app = read("app.js").strip()
 jarvis = read("jarvis.js").strip()
 queue = read("queue.js").strip()
@@ -21,7 +22,7 @@ queue = read("queue.js").strip()
 FAVICON = (
     "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' "
     "fill='none' stroke='%236c8cff' stroke-width='2' stroke-linecap='round' "
-    "stroke-linejoin='round'%3E%3Cpath d='M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z'/%3E"
+    "stroke-linejoin='round'%3E%3Cpath d='M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z'/%3E"
     "%3Cpath d='M9 12h.01M15 12h.01M9 16c.6.7 1.8 1 3 1s2.4-.3 3-1'/%3E%3C/svg%3E"
 )
 
@@ -44,6 +45,9 @@ TEMPLATE = """<!DOCTYPE html>
 @@BRIDGE@@
 </script>
 <script>
+@@MONITOR@@
+</script>
+<script>
 @@APP@@
 </script>
 <script>
@@ -62,6 +66,7 @@ for marker, value in {
     "@@CSS@@": css,
     "@@BODY@@": body,
     "@@BRIDGE@@": bridge,
+    "@@MONITOR@@": monitor,
     "@@APP@@": app,
     "@@JARVIS@@": jarvis,
     "@@QUEUE@@": queue,
