@@ -1,139 +1,127 @@
 'use strict';
 
-// Optional JARVIS 2.0 enhancements: voice input, speech output and chat autoscroll.
+// Optional JARVIS enhancements: bottom-pinned scrolling and reliable speech input.
 (() => {
-  const $ = (selector, root = document) => root.querySelector(selector);
+  const $ = selector => document.querySelector(selector);
   const scroll = $('#chatScroll');
   const messages = $('#messages');
-  if (!scroll || !messages) return;
+  const main = $('#main');
+  if (!scroll || !messages || !main || window.__NS_JARVIS_INITIALIZED__) return;
+  window.__NS_JARVIS_INITIALIZED__ = true;
 
   let pinnedToBottom = true;
-  let recognition = null;
-  let userStopped = false;
-  let scrollButton;
-
   const isAtBottom = () => scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 48;
-  const updateScrollButton = () => {
-    if (!scrollButton) return;
-    scrollButton.classList.toggle('hidden', isAtBottom());
-  };
-  const scrollToBottom = (behavior = 'smooth') => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.id = 'btnScrollBottom';
+  button.className = 'scroll-bottom hidden';
+  button.textContent = '↓ К последним сообщениям';
+  const updateButton = () => button.classList.toggle('hidden', isAtBottom());
+  const scrollBottom = (behavior = 'smooth') => {
     scroll.scrollTo({ top: scroll.scrollHeight, behavior });
     pinnedToBottom = true;
-    updateScrollButton();
+    updateButton();
   };
-
-  scrollButton = document.createElement('button');
-  scrollButton.type = 'button';
-  scrollButton.id = 'btnScrollBottom';
-  scrollButton.className = 'scroll-bottom hidden';
-  scrollButton.textContent = '↓ К последним сообщениям';
-  scrollButton.addEventListener('click', () => scrollToBottom());
-  $('#main').appendChild(scrollButton);
-
+  button.addEventListener('click', () => scrollBottom());
+  main.appendChild(button);
   scroll.addEventListener('scroll', () => {
     pinnedToBottom = isAtBottom();
-    updateScrollButton();
+    updateButton();
   }, { passive: true });
-
   const observer = new MutationObserver(() => {
-    if (pinnedToBottom) requestAnimationFrame(() => scrollToBottom('auto'));
-    else updateScrollButton();
+    if (pinnedToBottom) requestAnimationFrame(() => scrollBottom('auto'));
+    else updateButton();
   });
   observer.observe(messages, { childList: true, subtree: true, characterData: true });
-  window.addEventListener('resize', () => {
-    if (pinnedToBottom) scrollToBottom('auto');
-    else updateScrollButton();
-  });
+  window.addEventListener('resize', () => pinnedToBottom ? scrollBottom('auto') : updateButton());
 
   const input = $('#input');
-  const voiceButton = document.createElement('button');
-  voiceButton.type = 'button';
-  voiceButton.id = 'btnVoice';
-  voiceButton.className = 'icon-btn voice-btn';
-  voiceButton.title = 'Голосовой ввод';
-  voiceButton.setAttribute('aria-label', 'Начать голосовой ввод');
-  voiceButton.textContent = '🎙️';
-  const actions = $('.composer-actions');
-  if (actions && input) actions.insertBefore(voiceButton, $('#stat', actions));
-
+  const actions = document.querySelector('.composer-actions');
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) {
-    voiceButton.title = 'Голосовое распознавание не поддерживается этим браузером';
-    voiceButton.addEventListener('click', () => window.toast?.('Голосовой ввод не поддерживается этим браузером', 'warn'));
-  } else {
-    recognition = new Recognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = 'ru-RU';
-    let finalTranscript = '';
-    recognition.onstart = () => {
-      voiceButton.classList.add('active');
-      voiceButton.setAttribute('aria-label', 'Остановить голосовой ввод');
-      voiceButton.title = 'Нажмите, чтобы остановить';
-    };
-    recognition.onresult = event => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const text = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalTranscript += text;
-        else interim += text;
-      }
-      input.value = [input.value.trim(), finalTranscript, interim].filter(Boolean).join(' ');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-    recognition.onerror = event => {
-      if (event.error !== 'aborted') window.toast?.('Ошибка распознавания речи: ' + event.error, 'err');
-    };
-    recognition.onend = () => {
-      voiceButton.classList.remove('active');
-      voiceButton.setAttribute('aria-label', 'Начать голосовой ввод');
-      voiceButton.title = 'Голосовой ввод';
-      if (!userStopped && finalTranscript.trim()) input?.focus();
-      finalTranscript = '';
-      userStopped = false;
-    };
-    voiceButton.addEventListener('click', () => {
-      if (voiceButton.classList.contains('active')) {
-        userStopped = true;
-        recognition.stop();
-        return;
-      }
-      finalTranscript = '';
-      try { recognition.start(); }
-      catch (error) { window.toast?.('Не удалось запустить микрофон: ' + error.message, 'err'); }
-    });
-  }
+  if (!input || !actions || !Recognition || document.getElementById('btnVoice')) return;
 
-  // Speech synthesis is user-triggered to avoid unexpected audio and privacy surprises.
-  const addSpeakButton = message => {
-    if (message.dataset.speechActionsAdded) return;
-    const bubble = $('.bubble', message);
-    const content = $('.md', message);
-    const controls = $('.msg-actions', message);
-    if (!bubble || !content || !controls || !content.textContent.trim()) return;
-    message.dataset.speechActionsAdded = '1';
-    const speak = document.createElement('button');
-    speak.type = 'button';
-    speak.className = 'ma-btn';
-    speak.textContent = '🔊 Озвучить';
-    speak.addEventListener('click', () => {
-      if (!('speechSynthesis' in window)) return window.toast?.('Озвучивание не поддерживается', 'warn');
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(content.innerText || content.textContent);
-      utterance.lang = 'ru-RU';
-      window.speechSynthesis.speak(utterance);
-    });
-    const stop = document.createElement('button');
-    stop.type = 'button';
-    stop.className = 'ma-btn';
-    stop.textContent = '■ Остановить речь';
-    stop.addEventListener('click', () => window.speechSynthesis?.cancel());
-    controls.append(speak, stop);
+  const mic = document.createElement('button');
+  mic.type = 'button';
+  mic.id = 'btnVoice';
+  mic.className = 'icon-btn voice-btn';
+  mic.textContent = '🎙️';
+  mic.title = 'Начать голосовой ввод';
+  mic.setAttribute('aria-label', mic.title);
+  actions.insertBefore(mic, document.getElementById('stat'));
+
+  const recognition = new Recognition();
+  recognition.lang = 'ru-RU';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  let listening = false;
+  let restarting = false;
+  let baseText = '';
+  let restartTimer = 0;
+
+  const transcriptNow = () => {
+    const finalParts = [];
+    let interim = '';
+    for (let i = 0; i < recognition.results.length; i++) {
+      const result = recognition.results[i];
+      const text = result[0] && result[0].transcript ? result[0].transcript.trim() : '';
+      if (!text) continue;
+      if (result.isFinal) finalParts.push(text);
+      else interim = text;
+    }
+    return { final: finalParts.join(' '), interim };
   };
-  const speechObserver = new MutationObserver(() => {
-    document.querySelectorAll('#messages .msg.assistant').forEach(addSpeakButton);
+  const renderTranscript = () => {
+    const result = transcriptNow();
+    input.value = [baseText, result.final, result.interim].filter(Boolean).join(' ');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  recognition.onstart = () => {
+    restarting = false;
+    mic.classList.add('active');
+    mic.title = 'Нажмите, чтобы выключить микрофон';
+    mic.setAttribute('aria-label', mic.title);
+  };
+  recognition.onresult = renderTranscript;
+  recognition.onerror = event => {
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      listening = false;
+      window.toast?.('Нет разрешения на микрофон. Проверьте настройки браузера.', 'err');
+    } else if (event.error !== 'aborted' && event.error !== 'no-speech') {
+      window.toast?.('Ошибка распознавания речи: ' + event.error, 'warn');
+    }
+  };
+  recognition.onend = () => {
+    if (!listening) {
+      mic.classList.remove('active');
+      mic.title = 'Начать голосовой ввод';
+      mic.setAttribute('aria-label', mic.title);
+      restarting = false;
+      return;
+    }
+    if (restarting) return;
+    restarting = true;
+    restartTimer = window.setTimeout(() => {
+      restarting = false;
+      if (!listening) return;
+      try { recognition.start(); }
+      catch (_) { restartTimer = window.setTimeout(() => { if (listening) { restarting = false; try { recognition.start(); } catch (_) {} } }, 300); }
+    }, 180);
+  };
+  mic.addEventListener('click', () => {
+    if (listening) {
+      listening = false;
+      clearTimeout(restartTimer);
+      restarting = false;
+      recognition.stop();
+      return;
+    }
+    baseText = input.value.trim();
+    listening = true;
+    try { recognition.start(); }
+    catch (error) {
+      listening = false;
+      window.toast?.('Не удалось запустить микрофон: ' + error.message, 'err');
+    }
   });
-  speechObserver.observe(messages, { childList: true, subtree: true, characterData: true });
-  document.querySelectorAll('#messages .msg.assistant').forEach(addSpeakButton);
 })();
