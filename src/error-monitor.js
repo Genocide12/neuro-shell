@@ -1,49 +1,43 @@
 'use strict';
 
-// Lightweight, local-only error monitor. It never records request headers, bodies,
-// API keys, or chat text. Diagnostics are kept in this browser profile only.
+// Local-only diagnostics. Never persist credentials, headers, request bodies, or chat text.
 (() => {
   const KEY = 'neuroshell:error-log:v1';
-  const MAX = 50;
-  const safePath = value => {
+  const MAX_ENTRIES = 50;
+  const safeUrl = value => {
     try {
-      const url = new URL(String(value), location.href);
-      return url.origin + url.pathname;
+      const u = new URL(String(value), location.href);
+      return u.origin + u.pathname;
     } catch (_) { return 'unknown'; }
   };
-  const save = entry => {
+  const record = event => {
     try {
       const rows = JSON.parse(localStorage.getItem(KEY) || '[]');
-      rows.push(Object.assign({ time: new Date().toISOString() }, entry));
-      localStorage.setItem(KEY, JSON.stringify(rows.slice(-MAX)));
-    } catch (_) { /* storage may be unavailable or full */ }
+      rows.push(Object.assign({ time: new Date().toISOString() }, event));
+      localStorage.setItem(KEY, JSON.stringify(rows.slice(-MAX_ENTRIES)));
+    } catch (_) {}
   };
 
-  window.addEventListener('error', event => {
-    save({ kind: 'javascript', message: String(event.message || 'script error').slice(0, 240), file: safePath(event.filename), line: Number(event.lineno) || 0 });
-  });
-  window.addEventListener('unhandledrejection', event => {
-    const reason = event.reason;
-    save({ kind: 'unhandled-rejection', message: String(reason && reason.message || reason || 'unknown').slice(0, 240) });
-  });
+  window.addEventListener('error', e => record({ kind: 'javascript', message: String(e.message || 'script error').slice(0, 200), file: safeUrl(e.filename), line: Number(e.lineno) || 0 }));
+  window.addEventListener('unhandledrejection', e => record({ kind: 'unhandled-rejection', message: String(e.reason && e.reason.message || e.reason || 'unknown').slice(0, 200) }));
 
   const originalFetch = window.fetch.bind(window);
   window.fetch = async function(input, init) {
     const url = typeof input === 'string' || input instanceof URL ? String(input) : input && input.url || 'unknown';
-    const method = (init && init.method || input && input.method || 'GET').toUpperCase();
+    const method = String(init && init.method || input && input.method || 'GET').toUpperCase();
     const started = Date.now();
     try {
       const response = await originalFetch(input, init);
-      if (!response.ok) save({ kind: 'http', method, url: safePath(url), status: response.status, elapsedMs: Date.now() - started });
+      if (!response.ok) record({ kind: 'http', method, url: safeUrl(url), status: response.status, elapsedMs: Date.now() - started });
       return response;
     } catch (error) {
-      save({ kind: 'network', method, url: safePath(url), message: String(error && error.message || error).slice(0, 240), elapsedMs: Date.now() - started });
+      record({ kind: 'network', method, url: safeUrl(url), message: String(error && error.message || error).slice(0, 200), elapsedMs: Date.now() - started });
       throw error;
     }
   };
 
   window.NS_ERROR_MONITOR = {
-    read: () => { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (_) { return []; } },
-    clear: () => { try { localStorage.removeItem(KEY); } catch (_) {} }
+    read() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (_) { return []; } },
+    clear() { try { localStorage.removeItem(KEY); } catch (_) {} }
   };
 })();
