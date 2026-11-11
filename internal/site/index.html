@@ -220,6 +220,63 @@ a:hover{text-decoration:underline}
 @keyframes tp{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-5px);opacity:1}}
 
 
+.agent-badge{
+  font-size:11.5px;font-weight:600;color:#3ddc97;
+  background:rgba(61,220,151,.12);border:1px solid rgba(61,220,151,.35);
+  padding:3px 10px;border-radius:99px;cursor:pointer;flex:none;
+}
+.agent-badge:hover{background:rgba(61,220,151,.2)}
+.tool-note{
+  font-size:13px;color:var(--txt2);margin:2px 0 8px;
+  border-left:3px solid var(--line2);padding-left:10px;
+}
+.tool-note .md>*+*{margin-top:6px}
+.tool-step{
+  border:1px solid var(--line);border-radius:10px;background:var(--bg3);
+  margin:0 0 8px;overflow:hidden;
+}
+.tool-step.ok{border-color:rgba(61,220,151,.25)}
+.tool-step.err{border-color:rgba(255,92,116,.35)}
+.ts-head{
+  display:flex;align-items:center;gap:8px;padding:7px 11px;cursor:pointer;
+  font-size:12.5px;
+}
+.ts-ico{flex:none;font-size:13px}
+.ts-name{flex:none;font-weight:600;color:var(--txt)}
+.ts-arg{
+  flex:1;min-width:0;font-family:var(--mono);font-size:11.5px;color:var(--txt2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.ts-status{flex:none;font-weight:700;font-size:12px;color:var(--txt3)}
+.tool-step.ok .ts-status{color:var(--ok)}
+.tool-step.err .ts-status{color:var(--err)}
+.tool-step.run .ts-status{
+  color:var(--warn);
+}
+.tool-step.run .ts-status::before{
+  content:'';display:inline-block;width:10px;height:10px;margin-right:4px;
+  border:2px solid var(--warn);border-top-color:transparent;border-radius:50%;
+  vertical-align:-1px;animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ts-det{border-top:1px solid var(--line)}
+.ts-det summary{
+  padding:5px 11px;font-size:11.5px;color:var(--txt3);cursor:pointer;user-select:none;
+}
+.ts-det summary:hover{color:var(--txt2)}
+.ts-block{padding:2px 11px 9px}
+.ts-block .ts-cap{
+  display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;
+  color:var(--txt3);margin:6px 0 4px;
+}
+.ts-block pre{
+  font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--txt2);
+  background:#0d1117;border:1px solid var(--line);border-radius:8px;
+  padding:9px 11px;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word;
+  margin:0;
+}
+
+
 .welcome{max-width:640px;margin:8vh auto 0;text-align:center;animation:rise .3s ease}
 .welcome .w-logo{
   width:64px;height:64px;border-radius:18px;margin:0 auto 18px;display:grid;place-items:center;color:#fff;
@@ -456,7 +513,7 @@ a:hover{text-decoration:underline}
         Выход
       </button>
       <div class="sb-ver">
-        <span>v<span class="ns-version">1.1.0</span></span>
+        <span>v<span class="ns-version">1.2.0</span></span>
         <a href="https://github.com/Genocide12/neuro-shell/releases" target="_blank" rel="noopener">Релизы</a>
       </div>
     </div>
@@ -474,6 +531,7 @@ a:hover{text-decoration:underline}
         <span class="tb-sub" id="chatSub"></span>
       </div>
       <div class="tb-right">
+        <span id="agentBadge" class="agent-badge hidden" title="Режим агента: модель работает с файлами и GitHub">агент</span>
         <span class="model-badge" id="modelBadge">—</span>
         <span class="conn-dot" id="connDot" title="Не проверено"></span>
       </div>
@@ -621,6 +679,37 @@ a:hover{text-decoration:underline}
       </section>
 
       <section class="set-group">
+        <h3>Инструменты (режим агента)</h3>
+
+        <label class="field field-switch">
+          <span class="field-label">Доступ к файлам компьютера и GitHub</span>
+          <span class="switch"><input id="setAgent" type="checkbox"><i></i></span>
+        </label>
+        <span class="field-hint">Модель сама читает, пишет и ищет файлы, скачивает и обновляет репозитории GitHub через инструменты (function calling). Перед удалением и перезаписью — спросит подтверждение.</span>
+
+        <label class="field">
+          <span class="field-label">Рабочая папка (граница доступа модели к файлам)</span>
+          <div class="field-row">
+            <input id="setWorkspace" type="text" placeholder="например, C:\Users\Gennadiy\Desktop\Next Claud" spellcheck="false" autocomplete="off">
+            <button type="button" class="btn-ghost" id="btnWsHome" title="Подставить домашнюю папку">Домой</button>
+          </div>
+          <span class="field-hint" id="wsHint">Модель не выходит за пределы этой папки.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">GitHub-токен (PAT)</span>
+          <div class="field-row">
+            <input id="setGhToken" type="password" placeholder="github_pat_… или ghp_…" autocomplete="off" spellcheck="false">
+            <button type="button" class="icon-btn" id="btnRevealGh" title="Показать/скрыть">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button type="button" class="btn-ghost" id="btnTestGh">Проверить</button>
+          </div>
+          <span class="field-hint" id="ghHint">Токен хранится локально. Права: репозитории (чтение/запись). Даёт модели: список репозиториев, чтение и запись файлов, коммиты, создание репозиториев.</span>
+        </label>
+      </section>
+
+      <section class="set-group">
         <h3>Данные</h3>
         <div class="field-row">
           <button class="btn-ghost" id="btnExportSettings">Экспорт настроек</button>
@@ -689,7 +778,7 @@ a:hover{text-decoration:underline}
     if (BRIDGE) return;
     BRIDGE = window.NeuroShellBridge = {
       desktop: true,
-      version: window.NS_APP_VERSION || '1.1.0',
+      version: window.NS_APP_VERSION || '1.2.0',
       exit: function(){ try { location.href = '/__ns/exit'; } catch(e){ window.close(); } }
     };
 
@@ -725,6 +814,12 @@ a:hover{text-decoration:underline}
       if (exitBtn) exitBtn.classList.remove('hidden');
     } catch(e){}
 
+    // сообщаем приложению, что мост активен (пересчёт бейджа агента и подсказок)
+    try {
+      window.dispatchEvent(new CustomEvent('nsbridge'));
+      if (typeof window.NS_BRIDGE_READY === 'function') window.NS_BRIDGE_READY();
+    } catch(e){}
+
     // сердцебиение: сервер завершит процесс, когда вкладка закроется
     setInterval(function(){
       try { orig('/__ns/ping').catch(function(){}); } catch(e){}
@@ -747,7 +842,7 @@ a:hover{text-decoration:underline}
 'use strict';
 
 /* ================== КОНФИГ И ПРЕСЕТЫ ================== */
-const NS_VERSION = '1.1.0';
+const NS_VERSION = '1.2.0';
 const LS_PREFIX = 'neuroshell:';
 
 const PRESETS = {
@@ -819,7 +914,11 @@ const DEFAULTS = {
   preset: 'agent',
   system: PRESETS.agent.system,
   temp: 0.6,
-  stream: true
+  stream: true,
+  agentMode: false,   // инструменты: файлы + GitHub
+  workspace: '',      // рабочая папка (граница доступа модели к ФС)
+  ghToken: '',        // GitHub PAT
+  ghUser: ''          // логин с последней проверки токена
 };
 
 const SUGGESTED_MODELS = [
@@ -880,6 +979,18 @@ let attachments = [];                       // [{name,size,type,text?,dataUrl?}]
 let generating = false;
 let abortCtl = null;
 let modelListCache = [];
+
+// Мост десктоп-версии активируется асинхронно (запрос /__ns/ping может
+// завершиться и до, и после init()): слушаем событие на уровне модуля и
+// дополнительно выставляем глобальный хук — тогда любой порядок срабатывает.
+function onBridgeReady(){
+  try {
+    applySettingsToUI();
+    updateStat();
+  } catch(e){}
+}
+window.NS_BRIDGE_READY = onBridgeReady;
+window.addEventListener('nsbridge', onBridgeReady);
 
 /* ================== ЦЕНЫ НА ТОКЕНЫ ================== */
 // Встроенные тарифы — $ за 1 млн токенов (вход/выход): официальные цены
@@ -982,6 +1093,291 @@ function apiHeaders(){
   return h;
 }
 
+/* ================== ИНСТРУМЕНТЫ АГЕНТА (файлы + GitHub) ================== */
+// Режим агента даёт модели инструменты через OpenAI function calling:
+//   fs_*  — файлы на компьютере пользователя (только настольная версия:
+//           запросы идут в локальный сервер /__ns/fs/* с границей «рабочая папка»)
+//   gh_*  — GitHub по токену (REST API; работает и в веб-, и в настольной версии)
+
+const TOOL_META = {
+  fs_list:       { icon: '📂', label: 'показать папку' },
+  fs_read:       { icon: '📄', label: 'прочитать файл' },
+  fs_write:      { icon: '✏️', label: 'записать файл' },
+  fs_mkdir:      { icon: '📁', label: 'создать папку' },
+  fs_delete:     { icon: '🗑️', label: 'удалить' },
+  fs_move:       { icon: '➡️', label: 'переместить' },
+  fs_search:     { icon: '🔎', label: 'найти файлы' },
+  gh_me:         { icon: '🐙', label: 'GitHub: кто я' },
+  gh_repos:      { icon: '🐙', label: 'GitHub: мои репозитории' },
+  gh_read:       { icon: '🐙', label: 'GitHub: прочитать файл' },
+  gh_write:      { icon: '🐙', label: 'GitHub: записать файл (коммит)' },
+  gh_delete:     { icon: '🐙', label: 'GitHub: удалить файл' },
+  gh_create_repo:{ icon: '🐙', label: 'GitHub: создать репозиторий' },
+  gh_clone:      { icon: '📥', label: 'GitHub: скачать репозиторий в папку' }
+};
+
+function fsToolsAvailable(){
+  return isExeMode() && !!(settings.workspace || '').trim();
+}
+function ghToolsAvailable(){
+  return !!(settings.ghToken || '').trim();
+}
+function agentActive(){
+  return !!settings.agentMode && (fsToolsAvailable() || ghToolsAvailable());
+}
+
+// agentToolDefs — определения инструментов в формате OpenAI (body.tools)
+function agentToolDefs(){
+  const defs = [];
+  const T = (name, desc, props, req) => defs.push({
+    type: 'function',
+    function: { name, description: desc, parameters: { type: 'object', properties: props, required: req } }
+  });
+  if (fsToolsAvailable()){
+    const P = 'Путь относительно рабочей папки ' + settings.workspace + ' (можно и абсолютный, если он внутри неё)';
+    T('fs_list', 'Показать содержимое папки на компьютере пользователя',
+      { path: { type: 'string', description: P + '. Пустая строка или «.» — сама рабочая папка' } }, ['path']);
+    T('fs_read', 'Прочитать текстовый файл на компьютере пользователя (до 2 МБ)',
+      { path: { type: 'string', description: P } }, ['path']);
+    T('fs_write', 'Создать или перезаписать файл на компьютере пользователя. Недостающие папки создаются автоматически',
+      { path: { type: 'string', description: P }, content: { type: 'string', description: 'Полное новое содержимое файла' } },
+      ['path', 'content']);
+    T('fs_mkdir', 'Создать папку (можно вложенную) на компьютере пользователя',
+      { path: { type: 'string', description: P } }, ['path']);
+    T('fs_delete', 'Удалить файл или папку (папку — рекурсивно, необратимо!). Перед вызовом спроси подтверждение у пользователя',
+      { path: { type: 'string', description: P } }, ['path']);
+    T('fs_move', 'Переименовать или переместить файл/папку внутри рабочей папки',
+      { from: { type: 'string', description: 'Текущий путь' }, to: { type: 'string', description: 'Новый путь' } }, ['from', 'to']);
+    T('fs_search', 'Найти файлы и папки по части имени (без учёта регистра) внутри рабочей папки',
+      { pattern: { type: 'string', description: 'Подстрока имени, например «skill» или «.md»' }, path: { type: 'string', description: 'Искать только в этой подпапке (необязательно)' } },
+      ['pattern']);
+  }
+  if (ghToolsAvailable()){
+    T('gh_me', 'Информация о владельце GitHub-токена (логин, имя, план)', {}, []);
+    T('gh_repos', 'Список репозиториев GitHub, доступных токену (обновлённые сверху)',
+      { limit: { type: 'number', description: 'Сколько вернуть (по умолчанию 30, максимум 100)' } }, []);
+    T('gh_read', 'Прочитать файл из репозитория GitHub (текст) или показать содержимое папки репозитория',
+      { repo: { type: 'string', description: 'Репозиторий «владелец/имя»' }, path: { type: 'string', description: 'Путь внутри репозитория (пусто — корень)' }, ref: { type: 'string', description: 'Ветка или тег (по умолчанию ветка по умолчанию)' } },
+      ['repo']);
+    T('gh_write', 'Создать/обновить файл в репозитории GitHub — коммит с вашим сообщением. Перезапись существующего файла — только после подтверждения пользователя',
+      { repo: { type: 'string' }, path: { type: 'string', description: 'Путь внутри репозитория' }, content: { type: 'string', description: 'Полное новое содержимое файла' }, message: { type: 'string', description: 'Сообщение коммита' }, branch: { type: 'string', description: 'Ветка (необязательно)' } },
+      ['repo', 'path', 'content', 'message']);
+    T('gh_delete', 'Удалить файл из репозитория GitHub (коммит). Только после подтверждения пользователя',
+      { repo: { type: 'string' }, path: { type: 'string' }, message: { type: 'string', description: 'Сообщение коммита' }, branch: { type: 'string' } },
+      ['repo', 'path', 'message']);
+    T('gh_create_repo', 'Создать новый репозиторий GitHub под аккаунтом токена',
+      { name: { type: 'string' }, private: { type: 'boolean', description: 'Приватный ли (по умолчанию true)' }, description: { type: 'string', description: 'Описание репозитория' } },
+      ['name']);
+    if (fsToolsAvailable()){
+      T('gh_clone', 'Скачать репозиторий GitHub (zip) и распаковать его в подпапку рабочей папки — как git clone, но без git',
+        { repo: { type: 'string', description: '«владелец/имя»' }, ref: { type: 'string', description: 'Ветка или тег (по умолчанию main)' }, dest: { type: 'string', description: 'Имя подпапки (по умолчанию — имя репозитория)' } },
+        ['repo']);
+    }
+  }
+  return defs;
+}
+
+// agentSystemAddendum — правила инструментов, дописываемые к системному промпту
+function agentSystemAddendum(){
+  if (!agentActive()) return '';
+  let s = '\n\nИНСТРУМЕНТЫ (режим агента)\nУ тебя есть инструменты (function calling) — используй их сам, не проси пользователя «скопировать содержимое файла» или «перейти по ссылке».';
+  if (fsToolsAvailable()){
+    s += '\n- Работа с файлами компьютера: fs_list, fs_read, fs_write, fs_mkdir, fs_delete, fs_move, fs_search. Все пути — внутри рабочей папки «' + settings.workspace + '»; указывай их относительно неё (например «skills/SKILL.md»).';
+  }
+  if (ghToolsAvailable()){
+    s += '\n- GitHub' + (settings.ghUser ? ' (аккаунт ' + settings.ghUser + ')' : '') + ': gh_me, gh_repos, gh_read, gh_write, gh_delete, gh_create_repo' + (fsToolsAvailable() ? ', gh_clone (скачать репозиторий в рабочую папку)' : '') + '.';
+  }
+  s += '\nПравила:\n- Обычные действия (чтение, поиск, создание новых файлов) выполняй сразу, без лишних вопросов.\n- Перед удалением, перезаписью существующих файлов, коммитами в GitHub и другими необратимыми действиями коротко спроси подтверждение.\n- Результаты инструментов не выдумывай: что вернул вызов — то и есть. Ошибка инструмента — расскажи о ней.\n- После работы с файлами дай краткий итог: что сделано и где лежит.';
+  return s;
+}
+
+// ---- исполнение инструментов ----
+
+// nsPost — запрос к локальному серверу настольной версии (с заголовком X-NS-Agent)
+async function nsPost(path, payload){
+  const resp = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-NS-Agent': '1' },
+    body: JSON.stringify(payload)
+  });
+  const j = await resp.json().catch(() => ({ error: 'HTTP ' + resp.status }));
+  if (!resp.ok || j.error) throw new Error(j.error || 'HTTP ' + resp.status);
+  return j;
+}
+
+// ghCall — запрос к REST API GitHub с токеном (в exe-режиме идёт через локальный прокси)
+async function ghCall(method, apiPath, body){
+  const h = { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+  if (settings.ghToken) h['Authorization'] = 'Bearer ' + settings.ghToken.trim();
+  if (body !== undefined) h['Content-Type'] = 'application/json';
+  const resp = await fetch('https://api.github.com' + apiPath, {
+    method, headers: h, body: body !== undefined ? JSON.stringify(body) : undefined
+  });
+  const txt = await resp.text();
+  let j = null;
+  try { j = JSON.parse(txt); } catch(e){}
+  if (!resp.ok) throw new Error('GitHub HTTP ' + resp.status + (j && j.message ? ': ' + j.message : ''));
+  return j;
+}
+
+const b64encode = s => btoa(unescape(encodeURIComponent(s)));
+const b64decode = b => { try { return decodeURIComponent(escape(atob(String(b).replace(/\s/g, '')))); } catch(e){ return '(не удалось декодировать содержимое)'; } };
+const ghEncodePath = p => String(p || '').split('/').filter(x => x !== '').map(encodeURIComponent).join('/');
+
+// execAgentTool — выполняет инструмент по имени, возвращает { ok, result: string }
+async function execAgentTool(name, a){
+  a = a || {};
+  const ws = () => { if (!fsToolsAvailable()) throw new Error('файловые инструменты недоступны (нужна настольная версия и рабочая папка в настройках)'); return settings.workspace.trim(); };
+  switch (name){
+    case 'fs_list': {
+      const j = await nsPost('/__ns/fs/list', { root: ws(), path: a.path || '' });
+      const lines = (j.entries || []).map(e => (e.dir ? '📁 ' : '📄 ') + e.name + (e.dir ? '/' : ' · ' + fmtSize(e.size)) + ' · ' + e.mod);
+      return { ok: true, result: 'Папка «' + (a.path || '.') + '» — ' + (j.entries || []).length + ' элементов' + (j.truncated ? ' (показаны не все)' : '') + ':\n' + (lines.join('\n') || '(пусто)') };
+    }
+    case 'fs_read': {
+      const j = await nsPost('/__ns/fs/read', { root: ws(), path: a.path });
+      if (j.binary) return { ok: true, result: 'Файл «' + a.path + '» — бинарный (' + fmtSize(j.size) + '), содержимое не отдаётся' };
+      return { ok: true, result: (j.truncated ? '⚠ показаны первые 2 МБ файла (' + fmtSize(j.size) + ')\n' : '') + 'Файл «' + a.path + '» (' + fmtSize(j.size) + '):\n' + (j.content || '') };
+    }
+    case 'fs_write': {
+      const j = await nsPost('/__ns/fs/write', { root: ws(), path: a.path, content: String(a.content != null ? a.content : '') });
+      return { ok: true, result: 'Записан файл «' + a.path + '» (' + fmtSize(j.bytes) + ')' };
+    }
+    case 'fs_mkdir': {
+      await nsPost('/__ns/fs/mkdir', { root: ws(), path: a.path });
+      return { ok: true, result: 'Создана папка «' + a.path + '»' };
+    }
+    case 'fs_delete': {
+      await nsPost('/__ns/fs/delete', { root: ws(), path: a.path });
+      return { ok: true, result: 'Удалено: «' + a.path + '»' };
+    }
+    case 'fs_move': {
+      await nsPost('/__ns/fs/move', { root: ws(), from: a.from, to: a.to });
+      return { ok: true, result: 'Перемещено: «' + a.from + '» → «' + a.to + '»' };
+    }
+    case 'fs_search': {
+      const j = await nsPost('/__ns/fs/search', { root: ws(), path: a.path || '', pattern: a.pattern });
+      const lines = (j.results || []).map(r => (r.dir ? '📁 ' : '📄 ') + r.path + (r.dir ? '/' : ' · ' + fmtSize(r.size)));
+      return { ok: true, result: 'Найдено ' + (j.results || []).length + (j.truncated ? '+ (обрезано)' : '') + ' по «' + a.pattern + '»:\n' + (lines.join('\n') || '(ничего не найдено)') };
+    }
+    case 'gh_me': {
+      const j = await ghCall('GET', '/user');
+      return { ok: true, result: 'GitHub: ' + j.login + (j.name ? ' (' + j.name + ')' : '') + (j.plan && j.plan.name ? ' · план ' + j.plan.name : '') + ' · публичных репозиториев: ' + (j.public_repos || 0) };
+    }
+    case 'gh_repos': {
+      const lim = Math.min(Math.max(parseInt(a.limit, 10) || 30, 1), 100);
+      const j = await ghCall('GET', '/user/repos?per_page=' + lim + '&sort=updated');
+      const lines = (j || []).map(r => (r.private ? '🔒 ' : '🌐 ') + r.full_name + (r.description ? ' — ' + r.description.slice(0, 100) : '') + ' · обновлён ' + String(r.updated_at || '').slice(0, 10));
+      return { ok: true, result: 'Репозиториев: ' + (j || []).length + ' из ' + lim + ':\n' + lines.join('\n') };
+    }
+    case 'gh_read': {
+      const q = '/repos/' + a.repo + '/contents/' + ghEncodePath(a.path) + (a.ref ? '?ref=' + encodeURIComponent(a.ref) : '');
+      const j = await ghCall('GET', q);
+      if (Array.isArray(j)){
+        return { ok: true, result: 'Папка «' + (a.path || '/') + '» репозитория ' + a.repo + ':\n' + j.map(x => (x.type === 'dir' ? '📁 ' : '📄 ') + x.path + ' · ' + fmtSize(x.size)).join('\n') };
+      }
+      if (j.type === 'file' && j.encoding === 'base64' && j.content != null){
+        return { ok: true, result: 'Файл «' + a.path + '» из ' + a.repo + ' (' + fmtSize(j.size) + '):\n' + b64decode(j.content) };
+      }
+      return { ok: true, result: 'Файл «' + a.path + '» из ' + a.repo + ' слишком большой для чтения через API (лимит ~1 МБ) — используй gh_clone, чтобы скачать репозиторий целиком' };
+    }
+    case 'gh_write': {
+      if (!a.repo || a.path == null) throw new Error('нужны repo и path');
+      const p = '/repos/' + a.repo + '/contents/' + ghEncodePath(a.path);
+      let sha = null, existed = false;
+      try {
+        const cur = await ghCall('GET', p + (a.branch ? '?ref=' + encodeURIComponent(a.branch) : ''));
+        if (cur && cur.sha){ sha = cur.sha; existed = true; }
+      } catch(e){ /* файла ещё нет — это нормально */ }
+      const j = await ghCall('PUT', p, {
+        message: a.message || ('NeuroShell: обновление ' + a.path),
+        content: b64encode(String(a.content != null ? a.content : '')),
+        sha: sha || undefined,
+        branch: a.branch || undefined
+      });
+      return { ok: true, result: (existed ? 'Обновлён' : 'Создан') + ' файл «' + a.path + '» в ' + a.repo + (a.branch ? ' (ветка ' + a.branch + ')' : '') + ' — коммит ' + (j.commit && j.commit.sha ? j.commit.sha.slice(0, 7) : '?') + (j.content && j.content.html_url ? '\n' + j.content.html_url : '') };
+    }
+    case 'gh_delete': {
+      if (!a.repo || a.path == null) throw new Error('нужны repo и path');
+      const p = '/repos/' + a.repo + '/contents/' + ghEncodePath(a.path);
+      const cur = await ghCall('GET', p + (a.branch ? '?ref=' + encodeURIComponent(a.branch) : ''));
+      if (!cur || !cur.sha) throw new Error('файл не найден или это папка');
+      const j = await ghCall('DELETE', p, { message: a.message || ('NeuroShell: удаление ' + a.path), sha: cur.sha, branch: a.branch || undefined });
+      return { ok: true, result: 'Удалён файл «' + a.path + '» из ' + a.repo + ' — коммит ' + (j.commit && j.commit.sha ? j.commit.sha.slice(0, 7) : '?') };
+    }
+    case 'gh_create_repo': {
+      const j = await ghCall('POST', '/user/repos', {
+        name: a.name,
+        private: a.private !== false,
+        description: a.description || '',
+        auto_init: true
+      });
+      return { ok: true, result: 'Создан репозиторий ' + j.full_name + (j.private ? ' (приватный)' : ' (публичный)') + ' — ' + j.html_url };
+    }
+    case 'gh_clone': {
+      const j = await nsPost('/__ns/gh/clone', { root: ws(), repo: a.repo, ref: a.ref || '', token: settings.ghToken, dest: a.dest || '' });
+      return { ok: true, result: 'Репозиторий ' + a.repo + ' (ветка ' + j.ref + ') скачан в «' + j.dest + '» — файлов: ' + j.files };
+    }
+  }
+  return { ok: false, result: 'Неизвестный инструмент: ' + name };
+}
+
+// runAgentTool — обёртка: парсит JSON аргументов, режет слишком длинный результат
+async function runAgentTool(call){
+  let args = {};
+  try { args = call.args ? JSON.parse(call.args) : {}; }
+  catch(e){ return { ok: false, result: 'Аргументы — невалидный JSON: ' + e.message }; }
+  let out;
+  try { out = await execAgentTool(call.name, args); }
+  catch(e){ out = { ok: false, result: 'Ошибка: ' + (e && e.message ? e.message : String(e)) }; }
+  if (out.result && out.result.length > 60000) out.result = out.result.slice(0, 60000) + '\n…(результат обрезан)';
+  return out;
+}
+
+// toolArgSummary — короткая подпись аргументов для карточки в чате
+function toolArgSummary(name, args){
+  try { args = args ? JSON.parse(args) : {}; } catch(e){ return ''; }
+  const s = v => String(v == null ? '' : v);
+  switch (name){
+    case 'fs_list': case 'fs_read': case 'fs_write': case 'fs_mkdir': case 'fs_delete':
+      return s(args.path);
+    case 'fs_move': return s(args.from) + ' → ' + s(args.to);
+    case 'fs_search': return '«' + s(args.pattern) + '»' + (args.path ? ' в ' + s(args.path) : '');
+    case 'gh_read': case 'gh_write': case 'gh_delete':
+      return s(args.repo) + (args.path ? ' · ' + s(args.path) : '');
+    case 'gh_clone': case 'gh_create_repo':
+      return s(args.repo || args.name);
+    default: return '';
+  }
+}
+
+// toolCardsHtml — карточки выполнения инструментов (для карточки сообщения)
+function toolCardsHtml(m){
+  if (!m || !m.toolRounds || !m.toolRounds.length) return '';
+  let html = '';
+  for (const r of m.toolRounds){
+    if (r.content && r.content.trim()){
+      html += '<div class="tool-note">' + renderMarkdown(r.content) + '</div>';
+    }
+    for (const c of (r.calls || [])){
+      const meta = TOOL_META[c.name] || { icon: '⚙️', label: c.name };
+      const st = c.status === 'run' ? 'run' : c.ok ? 'ok' : 'err';
+      const stTxt = c.status === 'run' ? '' : c.ok ? '✓' : '✕';
+      const arg = esc(toolArgSummary(c.name, c.args));
+      html += '<div class="tool-step ' + st + '">' +
+        '<div class="ts-head"><span class="ts-ico">' + meta.icon + '</span>' +
+        '<span class="ts-name">' + esc(meta.label) + '</span>' +
+        (arg ? '<span class="ts-arg">' + arg + '</span>' : '') +
+        '<span class="ts-status">' + stTxt + '</span></div>' +
+        '<details class="ts-det"><summary>вызов и результат</summary>' +
+        '<div class="ts-block ts-args"><span class="ts-cap">аргументы</span><pre>' + esc(c.args || '{}') + '</pre></div>' +
+        '<div class="ts-block"><span class="ts-cap">результат</span><pre>' + esc(c.result != null ? String(c.result) : '…') + '</pre></div>' +
+        '</details></div>';
+    }
+  }
+  return html;
+}
+
 /* ================== РЕНДЕР: СПИСОК ЧАТОВ ================== */
 function chatIconSvg(){
   return '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
@@ -1061,7 +1457,9 @@ function msgEl(m, idx){
       body.appendChild(p);
     }
   } else {
-    body.innerHTML = renderMarkdown(m.content || '');
+    // карточки инструментов агента (если были) + текст ответа
+    const cards = toolCardsHtml(m);
+    body.innerHTML = cards + renderMarkdown(m.content || '');
   }
   bubble.appendChild(body);
 
@@ -1087,7 +1485,9 @@ function msgEl(m, idx){
   if (m.role === 'assistant' && m.usage){
     const meta = document.createElement('div');
     meta.className = 'msg-meta';
+    const nTools = m.toolRounds ? m.toolRounds.reduce((s, r) => s + (r.calls ? r.calls.length : 0), 0) : 0;
     meta.textContent =
+      (nTools ? '⚙ инструментов: ' + nTools + ' · ' : '') +
       (m.usage.est ? '~' : '') + fmtTok(m.usage.in) + ' вх · ' +
       (m.usage.est ? '~' : '') + fmtTok(m.usage.out) + ' вых' +
       (m.cost != null ? ' · ≈' + fmtUSD(m.cost) : '');
@@ -1429,23 +1829,72 @@ function regenerate(idx){
   runCompletion(chat, []);
 }
 
-// requestChat выполняет запрос к /chat/completions; если строгий прокси не принял
-// stream_options (поле с фактическим расходом токенов), повторяет без него.
+// requestChat выполняет запрос к /chat/completions. Если строгий прокси не принял
+// поле stream_options (расход токенов в стриме) или tools (function calling) —
+// повторяет без него, чтобы режим агента работал и на «капризных» серверах.
 async function requestChat(url, fetchOpts, body){
-  let resp = await fetch(url, fetchOpts);
-  if (!resp.ok){
+  let cur = Object.assign({}, body);
+  while (true){
+    const opts = Object.assign({}, fetchOpts, { body: JSON.stringify(cur) });
+    const resp = await fetch(url, opts);
+    if (resp.ok) return resp;
     let errText = await resp.text().catch(() => '');
-    if (body.stream && body.stream_options && /stream_options/i.test(errText)){
-      const b2 = Object.assign({}, body);
-      delete b2.stream_options;
-      const o2 = Object.assign({}, fetchOpts, { body: JSON.stringify(b2) });
-      resp = await fetch(url, o2);
-      if (resp.ok) return resp;
-      errText = await resp.text().catch(() => '');
+    if (cur.stream_options && /stream_options/i.test(errText)){
+      delete cur.stream_options;
+      continue;
+    }
+    if (cur.tools && /tool|function/i.test(errText)){
+      delete cur.tools;
+      delete cur.tool_choice;
+      continue;
     }
     throw new Error('HTTP ' + resp.status + (errText ? ' — ' + errText.slice(0, 500) : ''));
   }
-  return resp;
+}
+
+// buildApiMessages — история чата → массив сообщений для API, включая обмен
+// инструментами (assistant.tool_calls + role:'tool') из прошлых итераций агента.
+function buildApiMessages(chat){
+  const msgs = [];
+  const sys = (settings.system || PRESETS.agent.system) + agentSystemAddendum();
+  msgs.push({ role: 'system', content: sys });
+  for (const m of chat.messages){
+    if (m.role === 'user'){
+      const parts = [];
+      if (m.content) parts.push({ type: 'text', text: m.content });
+      if (m.attchs){
+        for (const a of m.attchs){
+          if (a.kind === 'image' && a.dataUrl){
+            parts.push({ type: 'image_url', image_url: { url: a.dataUrl } });
+          } else if (a.kind === 'text' && a.text){
+            parts.push({ type: 'text', text: 'Файл «' + a.name + '»:\n```\n' + a.text.slice(0, 60000) + '\n```' });
+          }
+        }
+      }
+      if (!parts.length) parts.push({ type: 'text', text: '(пусто)' });
+      msgs.push(parts.length === 1 && parts[0].type === 'text' ? { role: 'user', content: parts[0].text } : { role: 'user', content: parts });
+    } else if (m.role === 'assistant'){
+      // предыдущие итерации агента: пары «вызов инструментов → результаты»
+      if (m.toolRounds && m.toolRounds.length){
+        for (const r of m.toolRounds){
+          if (r.calls && r.calls.length){
+            msgs.push({
+              role: 'assistant',
+              content: r.content || '',
+              tool_calls: r.calls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.args || '{}' } }))
+            });
+            for (const c of r.calls){
+              msgs.push({ role: 'tool', tool_call_id: c.id, name: c.name, content: String(c.result != null ? c.result : '(нет результата)') });
+            }
+          } else if (r.content){
+            msgs.push({ role: 'assistant', content: r.content });
+          }
+        }
+      }
+      if (m.content) msgs.push({ role: 'assistant', content: m.content });
+    }
+  }
+  return msgs;
 }
 
 async function runCompletion(chat, atts){
@@ -1453,119 +1902,165 @@ async function runCompletion(chat, atts){
   setBusy(true);
 
   // плейсхолдер ответа
-  const ph = { role: 'assistant', content: '' };
+  const ph = { role: 'assistant', content: '', toolRounds: [] };
   const phIdx = chat.messages.length;
   chat.messages.push(ph);
   if (nearBottom()) scrollBottom();
 
   const box = $('#messages');
-  const el = msgEl(ph, phIdx);
+  let el = msgEl(ph, phIdx);
   // заменим содержимое на «печатает»
   const bubble = el.querySelector('.md');
   bubble.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
   box.appendChild(el);
   if (nearBottom()) scrollBottom();
 
+  // живое обновление карточки сообщения (стрим + инструменты)
+  const refresh = () => {
+    try {
+      const fresh = msgEl(ph, phIdx);
+      box.replaceChild(fresh, el);
+      el = fresh;
+      if (nearBottom()) scrollBottom();
+    } catch(e){}
+  };
+
   abortCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   let full = '';
-  let hadError = false;
 
   try {
-    const msgs = [];
-    msgs.push({ role: 'system', content: settings.system || PRESETS.agent.system });
-    for (const m of chat.messages){
-      if (m.role === 'user'){
-        const parts = [];
-        if (m.content) parts.push({ type: 'text', text: m.content });
-        if (m.attchs){
-          for (const a of m.attchs){
-            if (a.kind === 'image' && a.dataUrl){
-              parts.push({ type: 'image_url', image_url: { url: a.dataUrl } });
-            } else if (a.kind === 'text' && a.text){
-              parts.push({ type: 'text', text: 'Файл «' + a.name + '»:\n```\n' + a.text.slice(0, 60000) + '\n```' });
+    const toolDefs = agentActive() ? agentToolDefs() : [];
+    let uInSum = null, uOutSum = null; // фактический расход (сумма по итерациям)
+    const url = apiBase() + '/chat/completions';
+    const MAX_ROUNDS = 12;
+    let hitLimit = false;
+
+    for (let round = 1; round <= MAX_ROUNDS; round++){
+      const body = {
+        model: settings.model,
+        messages: buildApiMessages(chat),
+        temperature: Number(settings.temp),
+        stream: !!settings.stream
+      };
+      // просим сервер прислать фактический расход токенов прямо в стриме
+      // (нестрогие прокси поле просто игнорируют)
+      if (settings.stream) body.stream_options = { include_usage: true };
+      if (toolDefs.length){ body.tools = toolDefs; body.tool_choice = 'auto'; }
+
+      const fetchOpts = { method: 'POST', headers: apiHeaders() };
+      if (abortCtl) fetchOpts.signal = abortCtl.signal;
+      // в exe-режиме window.fetch перехвачен мостом NeuroShellBridge (см. обёртку):
+      // запросы к API уходят через локальный прокси, поэтому CORS не важен
+
+      let usage = null;      // расход этой итерации
+      let content = '';      // текст ответа итерации
+      let calls = [];        // вызовы инструментов (аккумулируются из стрима)
+
+      if (settings.stream){
+        const resp = await requestChat(url, fetchOpts, body);
+        setConn('ok');
+        const reader = resp.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        let lastRender = 0;
+        let acc = []; // tool_calls по index
+        while (true){
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0){
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const j = JSON.parse(data);
+              if (j.usage) usage = j.usage; // расход приходит в последнем чанке
+              const d = j.choices && j.choices[0] && j.choices[0].delta;
+              if (d){
+                if (d.content) content += d.content;
+                if (Array.isArray(d.tool_calls)){
+                  for (const tc of d.tool_calls){
+                    const i = tc.index != null ? tc.index : 0;
+                    if (!acc[i]) acc[i] = { id: '', name: '', args: '' };
+                    if (tc.id) acc[i].id = tc.id;
+                    if (tc.function){
+                      if (tc.function.name) acc[i].name += tc.function.name;
+                      if (tc.function.arguments) acc[i].args += tc.function.arguments;
+                    }
+                  }
+                }
+              }
+            } catch(e){}
+          }
+          const t = Date.now();
+          if (t - lastRender > 60){
+            lastRender = t;
+            ph.content = content;
+            const b = el.querySelector('.md');
+            if (b) b.innerHTML = toolCardsHtml(ph) + renderMarkdown(content);
+            if (nearBottom()) scrollBottom();
+          }
+        }
+        calls = acc.filter(c => c && c.name);
+      } else {
+        const resp = await requestChat(url, fetchOpts, body);
+        setConn('ok');
+        const j = await resp.json();
+        if (j.usage) usage = j.usage;
+        const msg = j.choices && j.choices[0] && j.choices[0].message;
+        if (msg){
+          content = msg.content || '';
+          if (Array.isArray(msg.tool_calls)){
+            for (const tc of msg.tool_calls){
+              calls.push({ id: tc.id || '', name: tc.function ? tc.function.name : '', args: tc.function ? (tc.function.arguments || '{}') : '{}' });
             }
           }
         }
-        if (!parts.length) parts.push({ type: 'text', text: '(пусто)' });
-        msgs.push(parts.length === 1 && parts[0].type === 'text' ? { role: 'user', content: parts[0].text } : { role: 'user', content: parts });
-      } else if (m.role === 'assistant' && m.content){
-        msgs.push({ role: 'assistant', content: m.content });
       }
+
+      // суммируем фактический расход по итерациям
+      if (usage){
+        const pin = usage.prompt_tokens != null ? usage.prompt_tokens : usage.input_tokens;
+        const pout = usage.completion_tokens != null ? usage.completion_tokens : usage.output_tokens;
+        if (pin != null) uInSum = (uInSum || 0) + pin;
+        if (pout != null) uOutSum = (uOutSum || 0) + pout;
+      }
+
+      // итерация с инструментами: выполнить и продолжить цикл
+      if (calls.length && !(abortCtl && abortCtl.signal.aborted)){
+        const r = { content, calls };
+        ph.toolRounds.push(r);
+        ph.content = '';
+        for (const c of r.calls){
+          c.status = 'run';
+          refresh();
+          const out = await runAgentTool(c);
+          c.ok = out.ok;
+          c.result = out.result;
+          c.status = 'done';
+          refresh();
+        }
+        if (round === MAX_ROUNDS) hitLimit = true;
+        continue; // новый запрос уже с результатами инструментов
+      }
+
+      full = content;
+      break;
     }
 
-    const body = {
-      model: settings.model,
-      messages: msgs,
-      temperature: Number(settings.temp),
-      stream: !!settings.stream
-    };
-    // просим сервер прислать фактический расход токенов прямо в стриме
-    // (нестрогие прокси поле просто игнорируют)
-    if (settings.stream) body.stream_options = { include_usage: true };
-
-    const url = apiBase() + '/chat/completions';
-    const fetchOpts = { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) };
-    if (abortCtl) fetchOpts.signal = abortCtl.signal;
-    // в exe-режиме window.fetch перехвачен мостом NeuroShellBridge (см. обёртку):
-    // запросы к API уходят через локальный прокси, поэтому CORS не важен
-
-    let usage = null; // фактический расход токенов, если сервер его присылает
-
-    if (settings.stream){
-      const resp = await requestChat(url, fetchOpts, body);
-      setConn('ok');
-      const reader = resp.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      let lastRender = 0;
-      while (true){
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let nl;
-        while ((nl = buf.indexOf('\n')) >= 0){
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (!line.startsWith('data:')) continue;
-          const data = line.slice(5).trim();
-          if (data === '[DONE]') continue;
-          try {
-            const j = JSON.parse(data);
-            if (j.usage) usage = j.usage; // расход приходит в последнем чанке
-            const d = j.choices && j.choices[0] && j.choices[0].delta;
-            if (d && d.content) full += d.content;
-          } catch(e){}
-        }
-        const t = Date.now();
-        if (t - lastRender > 60){
-          lastRender = t;
-          ph.content = full;
-          bubble.innerHTML = renderMarkdown(full);
-          if (nearBottom()) scrollBottom();
-        }
-      }
-    } else {
-      const resp = await requestChat(url, fetchOpts, body);
-      setConn('ok');
-      const j = await resp.json();
-      if (j.usage) usage = j.usage;
-      full = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
-      ph.content = full;
-    }
-
-    ph.content = full || '(пустой ответ)';
+    ph.content = full || (ph.toolRounds.length ? (hitLimit ? '*(достигнут лимит итераций инструментов — напишите «продолжай», чтобы завершить начатое)*' : '') : '(пустой ответ)');
 
     // расход токенов: фактический (usage) или оценка ~3.6 симв/ток; стоимость — по тарифу
-    let uIn = null, uOut = null;
-    if (usage){
-      uIn = usage.prompt_tokens != null ? usage.prompt_tokens : usage.input_tokens;
-      uOut = usage.completion_tokens != null ? usage.completion_tokens : usage.output_tokens;
-    }
+    let uIn = uInSum, uOut = uOutSum;
     let est = false;
     if (uIn == null || uOut == null){
       est = true;
-      let all = settings.system || '';
+      let all = settings.system + agentSystemAddendum() || '';
       for (const m of chat.messages) if (m.role !== 'error') all += '\n' + (m.content || '');
+      for (const r of (ph.toolRounds || [])) all += '\n' + (r.content || '') + (r.calls || []).map(c => (c.args || '') + (c.result || '')).join('\n');
       if (uIn == null) uIn = estTokens(all);
       if (uOut == null) uOut = estTokens(full);
     }
@@ -1576,13 +2071,12 @@ async function runCompletion(chat, atts){
     chat.tokOut = (chat.tokOut || 0) + uOut;
 
     // пересобираем элемент: появляются кнопки «копировать» и «артефакт»
-    try { box.replaceChild(msgEl(ph, phIdx), el); } catch(e){ bubble.innerHTML = renderMarkdown(ph.content); }
+    refresh();
   } catch(err){
-    hadError = true;
     const aborted = err && (err.name === 'AbortError');
-    if (aborted && full){
-      ph.content = full + '\n\n*(остановлено)*';
-      try { box.replaceChild(msgEl(ph, phIdx), el); } catch(e){ bubble.innerHTML = renderMarkdown(ph.content); }
+    if (aborted && (full || ph.toolRounds.length)){
+      ph.content = (full + '\n\n*(остановлено)*').trim();
+      refresh();
     } else if (aborted){
       chat.messages.splice(phIdx, 1);
       box.removeChild(el);
@@ -1709,6 +2203,10 @@ function openSettings(){
   $('#setTemp').value = settings.temp;
   $('#tempVal').textContent = settings.temp;
   $('#setStream').checked = !!settings.stream;
+  $('#setAgent').checked = !!settings.agentMode;
+  $('#setWorkspace').value = settings.workspace || '';
+  $('#setGhToken').value = settings.ghToken || '';
+  updateAgentHints();
   fillModelList();
   updateModelPriceHint();
   $('#settingsModal').classList.remove('hidden');
@@ -1850,6 +2348,11 @@ function saveSettings(){
   }
   settings.temp = $('#setTemp').value;
   settings.stream = $('#setStream').checked;
+  settings.agentMode = $('#setAgent').checked;
+  settings.workspace = $('#setWorkspace').value.trim();
+  const newGh = $('#setGhToken').value.trim();
+  if (newGh !== settings.ghToken) settings.ghUser = ghUserChecked || ''; // токен сменился — логин сбрасывается
+  settings.ghToken = newGh;
   persist();
   applySettingsToUI();
   closeSettings();
@@ -1862,8 +2365,85 @@ function applySettingsToUI(){
   $('#modelBadge').title = 'Модель: ' + settings.model +
     (p ? '\nТариф: ' + fmtUSD(p.in) + ' вход · ' + fmtUSD(p.out) + ' выход за 1M токенов (' + PRICE_SRC_LABEL[p.src] + ')' : '\nТариф не известен — задайте в таблице цен') +
     '\nBase URL: ' + apiBase() + '\nКлик — таблица цен';
+  // бейдж режима агента вверху
+  const ab = $('#agentBadge');
+  if (ab){
+    const n = agentActive() ? agentToolDefs().length : 0;
+    ab.classList.toggle('hidden', !n);
+    if (n) ab.title = 'Режим агента активен: ' + n + ' инструментов' + (fsToolsAvailable() ? '\nРабочая папка: ' + settings.workspace : '') + (settings.ghUser ? '\nGitHub: ' + settings.ghUser : '') + '\nКлик — настройки';
+  }
   setConn('');
   updateModelPriceHint();
+}
+
+// ghUserChecked — логин, подтверждённый кнопкой «Проверить» (до сохранения настроек)
+let ghUserChecked = '';
+
+// updateAgentHints — подсказки доступности в разделе «Инструменты»
+function updateAgentHints(){
+  const ws = $('#wsHint');
+  if (ws){
+    const path = $('#setWorkspace').value.trim();
+    if (!isExeMode()){
+      ws.innerHTML = 'Файловые инструменты работают только в <b>настольной версии</b> (NeuroShell.exe). Папку можно задать заранее — в exe она заработает. GitHub-инструменты доступны и в вебе.';
+    } else if (!path){
+      ws.innerHTML = 'Укажите папку — модель не сможет работать с файлами, пока она не задана.';
+    } else {
+      ws.innerHTML = 'Настольная версия · папка: <b>' + esc(path) + '</b>. Модель не выходит за её пределы.';
+    }
+  }
+  const gh = $('#ghHint');
+  if (gh){
+    const tok = $('#setGhToken').value.trim();
+    if (settings.ghUser && tok === (settings.ghToken || '')) {
+      gh.innerHTML = 'Токен проверен: <b>' + esc(settings.ghUser) + '</b>. Хранится локально и отправляется только в api.github.com.';
+    } else if (tok){
+      gh.textContent = 'Нажмите «Проверить», чтобы убедиться, что токен живой.';
+    } else {
+      gh.textContent = 'Токен хранится локально. Права: репозитории (чтение/запись).';
+    }
+  }
+}
+
+// pickWsHome — подставить домашнюю папку (кнопка «Домой»)
+async function pickWsHome(){
+  if (!isExeMode()){
+    toast('Домашняя папка подставляется в настольной версии — впишите путь вручную', 'warn', 4200);
+    return;
+  }
+  try {
+    const j = await nsPost('/__ns/fs/home', {});
+    if (j && j.home){
+      $('#setWorkspace').value = j.home;
+      updateAgentHints();
+      toast('Подставлена домашняя папка: ' + j.home, 'ok');
+    }
+  } catch(e){
+    toast('Не удалось определить домашнюю папку: ' + e.message, 'err');
+  }
+}
+
+// testGhToken — проверка GitHub PAT прямо в настройках
+async function testGhToken(){
+  const tok = $('#setGhToken').value.trim();
+  const btn = $('#btnTestGh');
+  if (!tok){ toast('Вставьте токен GitHub (Settings → Developer settings → Personal access tokens)', 'warn', 4200); return; }
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const h = { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Authorization': 'Bearer ' + tok };
+    const resp = await fetch('https://api.github.com/user', { headers: h });
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status + (j.message ? ' — ' + j.message : ''));
+    ghUserChecked = j.login || '?';
+    $('#ghHint').innerHTML = 'Токен работает: <b>' + esc(ghUserChecked) + '</b>' + (j.name ? ' (' + esc(j.name) + ')' : '') + ' · публичных репозиториев: ' + (j.public_repos || 0);
+    toast('Токен GitHub работает — ' + ghUserChecked, 'ok');
+  } catch(e){
+    ghUserChecked = '';
+    $('#ghHint').textContent = 'Токен не прошёл проверку: ' + e.message;
+    toast('Проверка токена не удалась: ' + e.message, 'err', 6000);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Проверить';
+  }
 }
 
 // showCorsHint показывает развёрнутую подсказку в настройках, когда веб-версию
@@ -2173,6 +2753,18 @@ function init(){
   $('#btnTestKey').addEventListener('click', testKey);
   $('#btnReloadModels').addEventListener('click', () => loadModels(false));
   $('#btnHideCorsHint').addEventListener('click', () => $('#corsHint').classList.add('hidden'));
+
+  // инструменты агента
+  $('#btnWsHome').addEventListener('click', pickWsHome);
+  $('#btnTestGh').addEventListener('click', testGhToken);
+  $('#btnRevealGh').addEventListener('click', () => {
+    const g = $('#setGhToken');
+    g.type = g.type === 'password' ? 'text' : 'password';
+  });
+  $('#setWorkspace').addEventListener('input', updateAgentHints);
+  $('#setGhToken').addEventListener('input', updateAgentHints);
+  $('#setAgent').addEventListener('change', updateAgentHints);
+  $('#agentBadge').addEventListener('click', openSettings);
   $('#btnPrices').addEventListener('click', openPrices);
   $('#btnClosePrices').addEventListener('click', () => $('#priceModal').classList.add('hidden'));
   $('#priceModal').addEventListener('click', e => { if (e.target === e.currentTarget) $('#priceModal').classList.add('hidden'); });

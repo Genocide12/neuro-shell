@@ -37,7 +37,7 @@
         Выход
       </button>
       <div class="sb-ver">
-        <span>v<span class="ns-version">1.1.0</span></span>
+        <span>v<span class="ns-version">1.2.0</span></span>
         <a href="https://github.com/Genocide12/neuro-shell/releases" target="_blank" rel="noopener">Релизы</a>
       </div>
     </div>
@@ -55,6 +55,7 @@
         <span class="tb-sub" id="chatSub"></span>
       </div>
       <div class="tb-right">
+        <span id="agentBadge" class="agent-badge hidden" title="Режим агента: модель работает с файлами и GitHub">агент</span>
         <span class="model-badge" id="modelBadge">—</span>
         <span class="conn-dot" id="connDot" title="Не проверено"></span>
       </div>
@@ -198,6 +199,37 @@
         <label class="field field-switch">
           <span class="field-label">Потоковый вывод (стриминг)</span>
           <span class="switch"><input id="setStream" type="checkbox" checked><i></i></span>
+        </label>
+      </section>
+
+      <section class="set-group">
+        <h3>Инструменты (режим агента)</h3>
+
+        <label class="field field-switch">
+          <span class="field-label">Доступ к файлам компьютера и GitHub</span>
+          <span class="switch"><input id="setAgent" type="checkbox"><i></i></span>
+        </label>
+        <span class="field-hint">Модель сама читает, пишет и ищет файлы, скачивает и обновляет репозитории GitHub через инструменты (function calling). Перед удалением и перезаписью — спросит подтверждение.</span>
+
+        <label class="field">
+          <span class="field-label">Рабочая папка (граница доступа модели к файлам)</span>
+          <div class="field-row">
+            <input id="setWorkspace" type="text" placeholder="например, C:\Users\Gennadiy\Desktop\Next Claud" spellcheck="false" autocomplete="off">
+            <button type="button" class="btn-ghost" id="btnWsHome" title="Подставить домашнюю папку">Домой</button>
+          </div>
+          <span class="field-hint" id="wsHint">Модель не выходит за пределы этой папки.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">GitHub-токен (PAT)</span>
+          <div class="field-row">
+            <input id="setGhToken" type="password" placeholder="github_pat_… или ghp_…" autocomplete="off" spellcheck="false">
+            <button type="button" class="icon-btn" id="btnRevealGh" title="Показать/скрыть">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button type="button" class="btn-ghost" id="btnTestGh">Проверить</button>
+          </div>
+          <span class="field-hint" id="ghHint">Токен хранится локально. Права: репозитории (чтение/запись). Даёт модели: список репозиториев, чтение и запись файлов, коммиты, создание репозиториев.</span>
         </label>
       </section>
 

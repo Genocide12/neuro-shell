@@ -9,7 +9,7 @@
     if (BRIDGE) return;
     BRIDGE = window.NeuroShellBridge = {
       desktop: true,
-      version: window.NS_APP_VERSION || '1.1.0',
+      version: window.NS_APP_VERSION || '1.2.0',
       exit: function(){ try { location.href = '/__ns/exit'; } catch(e){ window.close(); } }
     };
 
@@ -43,6 +43,12 @@
       if (badge) badge.textContent = 'настольная версия';
       var exitBtn = document.getElementById('btnExit');
       if (exitBtn) exitBtn.classList.remove('hidden');
+    } catch(e){}
+
+    // сообщаем приложению, что мост активен (пересчёт бейджа агента и подсказок)
+    try {
+      window.dispatchEvent(new CustomEvent('nsbridge'));
+      if (typeof window.NS_BRIDGE_READY === 'function') window.NS_BRIDGE_READY();
     } catch(e){}
 
     // сердцебиение: сервер завершит процесс, когда вкладка закроется

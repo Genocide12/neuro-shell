@@ -33,6 +33,13 @@ REPLY = (
     "```python\nprint('стриминг и таблицы работают')\n```"
 )
 
+# Ответ после того, как инструмент вернул результат (для теста режима агента)
+REPLY_AFTER_TOOLS = (
+    "Готово — я вызвал инструмент и получил результат:\n\n"
+    "```text\n{tool_result}\n```\n\n"
+    "Цикл «модель → инструмент → модель» работает."
+)
+
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -68,8 +75,37 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(400)
             return
 
-        prompt_tokens = sum(len(str(m.get("content", ""))) for m in req.get("messages", [])) // 4 + 7
-        completion_tokens = len(REPLY) // 4 + 5
+        messages = req.get("messages", [])
+        has_tools = bool(req.get("tools"))
+        tool_results = [m for m in messages if m.get("role") == "tool"]
+        prompt_tokens = sum(len(str(m.get("content", ""))) for m in messages) // 4 + 7
+
+        # Режим агента: первый запрос с tools → просим вызвать инструмент;
+        # когда результаты вернулись — обычный текстовый ответ.
+        if has_tools and not tool_results:
+            completion_tokens = 30
+            tool_call = {
+                "id": "call_mock_1",
+                "type": "function",
+                "function": {
+                    "name": "fs_list",
+                    "arguments": json.dumps({"path": ""}, ensure_ascii=False),
+                },
+            }
+            finish = "tool_calls"
+            reply = None
+        elif tool_results:
+            reply = REPLY_AFTER_TOOLS.format(
+                tool_result=str(tool_results[-1].get("content", ""))[:400]
+            )
+            completion_tokens = len(reply) // 4 + 5
+            tool_call = None
+            finish = "stop"
+        else:
+            reply = REPLY
+            completion_tokens = len(REPLY) // 4 + 5
+            tool_call = None
+            finish = "stop"
         model = req.get("model", "mock")
 
         if req.get("stream"):
@@ -79,27 +115,54 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
-            chunks = [REPLY[i:i+40] for i in range(0, len(REPLY), 40)]
-            for i, piece in enumerate(chunks):
-                payload = json.dumps(
-                    {"id": "mock", "object": "chat.completion.chunk", "model": model,
-                     "choices": [{"index": 0, "delta": {"content": piece}}]},
-                    ensure_ascii=False,
-                )
-                self._sse(payload)
-                time.sleep(0.01)
+
+            def sse(payload):
+                data = f"data: {payload}\n\n".encode()
+                self.wfile.write(f"{len(data):x}\r\n".encode() + data + b"\r\n")
+
+            if tool_call is not None:
+                # инструмент просится стримом: имя, затем аргументы кусками
+                sse(json.dumps({
+                    "id": "mock", "object": "chat.completion.chunk", "model": model,
+                    "choices": [{"index": 0, "delta": {"tool_calls": [{
+                        "index": 0, "id": tool_call["id"], "type": "function",
+                        "function": {"name": tool_call["function"]["name"], "arguments": ""},
+                    }]}}],
+                }, ensure_ascii=False))
+                args = tool_call["function"]["arguments"]
+                for i in range(0, len(args), 10):
+                    sse(json.dumps({
+                        "id": "mock", "object": "chat.completion.chunk", "model": model,
+                        "choices": [{"index": 0, "delta": {"tool_calls": [{
+                            "index": 0,
+                            "function": {"arguments": args[i:i+10]},
+                        }]}}],
+                    }, ensure_ascii=False))
+                    time.sleep(0.01)
+            else:
+                chunks = [reply[i:i+40] for i in range(0, len(reply), 40)]
+                for piece in chunks:
+                    sse(json.dumps(
+                        {"id": "mock", "object": "chat.completion.chunk", "model": model,
+                         "choices": [{"index": 0, "delta": {"content": piece}}]},
+                        ensure_ascii=False,
+                    ))
+                    time.sleep(0.01)
             # последний чанк — фактический расход токенов
-            self._sse(json.dumps({
+            sse(json.dumps({
                 "id": "mock", "object": "chat.completion.chunk", "model": model,
-                "choices": [{"index": 0, "delta": {}}],
+                "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
                 "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
                           "total_tokens": prompt_tokens + completion_tokens},
             }))
             self.wfile.write(b"0\r\n\r\n")
         else:
+            message = {"role": "assistant", "content": reply}
+            if tool_call is not None:
+                message = {"role": "assistant", "content": "", "tool_calls": [tool_call]}
             body = json.dumps({
                 "id": "mock", "object": "chat.completion", "model": model,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": REPLY}, "finish_reason": "stop"}],
+                "choices": [{"index": 0, "message": message, "finish_reason": finish}],
                 "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens,
                           "total_tokens": prompt_tokens + completion_tokens},
             }, ensure_ascii=False).encode()
@@ -109,10 +172,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-
-    def _sse(self, payload: str):
-        data = f"data: {payload}\n\n".encode()
-        self.wfile.write(f"{len(data):x}\r\n".encode() + data + b"\r\n")
 
     def log_message(self, fmt, *args):
         sys.stderr.write("[mock] " + fmt % args + "\n")
