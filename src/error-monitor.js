@@ -1,14 +1,12 @@
 'use strict';
 
-// Local-only diagnostics. Never persist credentials, headers, request bodies, or chat text.
+// Local diagnostics only: never store credentials, headers, request bodies, or chat text.
 (() => {
   const KEY = 'neuroshell:error-log:v1';
   const MAX_ENTRIES = 50;
   const safeUrl = value => {
-    try {
-      const u = new URL(String(value), location.href);
-      return u.origin + u.pathname;
-    } catch (_) { return 'unknown'; }
+    try { const u = new URL(String(value), location.href); return u.origin + u.pathname; }
+    catch (_) { return 'unknown'; }
   };
   const record = event => {
     try {
@@ -17,7 +15,6 @@
       localStorage.setItem(KEY, JSON.stringify(rows.slice(-MAX_ENTRIES)));
     } catch (_) {}
   };
-
   window.addEventListener('error', e => record({ kind: 'javascript', message: String(e.message || 'script error').slice(0, 200), file: safeUrl(e.filename), line: Number(e.lineno) || 0 }));
   window.addEventListener('unhandledrejection', e => record({ kind: 'unhandled-rejection', message: String(e.reason && e.reason.message || e.reason || 'unknown').slice(0, 200) }));
 
