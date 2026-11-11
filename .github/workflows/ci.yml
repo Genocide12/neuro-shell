@@ -15,34 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
-      - name: Build website
+      - name: Build site
         run: python3 scripts/build_site.py
-
       - name: Check JavaScript syntax
-        run: |
-          for file in src/*.js; do node --check "$file"; done
-
-      - name: Verify generated pages
+        run: for file in src/*.js; do node --check "$file"; done
+      - name: Verify generated files
         run: |
           test -s index.html
           test -s internal/site/index.html
           cmp index.html internal/site/index.html
-
       - name: Test Go packages
         run: go test ./...
-
-      - name: Build Windows desktop app
+      - name: Build Windows application
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H=windowsgui" -o /tmp/NeuroShell.exe ./cmd/neuroshell
