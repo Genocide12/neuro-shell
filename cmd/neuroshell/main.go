@@ -115,13 +115,15 @@ func nsProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream, */*")
 	if auth := r.Header.Get("X-NS-Authorization"); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
 	if xi := r.Header.Get("X-NS-X-Api-Key"); xi != "" {
 		req.Header.Set("x-api-key", xi)
 	}
-	req.Header.Set("User-Agent", "NeuroShell/"+version)
+	// браузерный UA: часть прокси-сервисов фильтрует не-браузерные клиенты
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 NeuroShell/"+version)
 
 	client := &http.Client{Timeout: 10 * time.Minute}
 	resp, err := client.Do(req)
