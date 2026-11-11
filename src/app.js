@@ -2,7 +2,7 @@
 'use strict';
 
 /* ================== КОНФИГ И ПРЕСЕТЫ ================== */
-const NS_VERSION = '1.2.0';
+const NS_VERSION = '1.3.0';
 const LS_PREFIX = 'neuroshell:';
 
 const PRESETS = {
@@ -76,7 +76,8 @@ const DEFAULTS = {
   temp: 0.6,
   stream: true,
   agentMode: false,   // инструменты: файлы + GitHub
-  workspace: '',      // рабочая папка (граница доступа модели к ФС)
+  fsMode: 'folder',   // доступ к файлам: 'folder' (рабочая папка) | 'full' (весь компьютер)
+  workspace: '',      // рабочая папка (граница доступа модели к ФС в режиме 'folder')
   ghToken: '',        // GitHub PAT
   ghUser: ''          // логин с последней проверки токена
 };
@@ -256,10 +257,12 @@ function apiHeaders(){
 /* ================== ИНСТРУМЕНТЫ АГЕНТА (файлы + GitHub) ================== */
 // Режим агента даёт модели инструменты через OpenAI function calling:
 //   fs_*  — файлы на компьютере пользователя (только настольная версия:
-//           запросы идут в локальный сервер /__ns/fs/* с границей «рабочая папка»)
+//           запросы идут в локальный сервер /__ns/fs/*; два режима —
+//           «рабочая папка» с границей и «весь компьютер» с абсолютными путями)
 //   gh_*  — GitHub по токену (REST API; работает и в веб-, и в настольной версии)
 
 const TOOL_META = {
+  fs_drives:      { icon: '💾', label: 'диски компьютера' },
   fs_list:       { icon: '📂', label: 'показать папку' },
   fs_read:       { icon: '📄', label: 'прочитать файл' },
   fs_write:      { icon: '✏️', label: 'записать файл' },
@@ -277,7 +280,11 @@ const TOOL_META = {
 };
 
 function fsToolsAvailable(){
-  return isExeMode() && !!(settings.workspace || '').trim();
+  return isExeMode() && (fsFullMode() || !!(settings.workspace || '').trim());
+}
+// fsFullMode — режим «весь компьютер»: любые абсолютные пути всех дисков
+function fsFullMode(){
+  return settings.fsMode === 'full';
 }
 function ghToolsAvailable(){
   return !!(settings.ghToken || '').trim();
@@ -294,6 +301,28 @@ function agentToolDefs(){
     function: { name, description: desc, parameters: { type: 'object', properties: props, required: req } }
   });
   if (fsToolsAvailable()){
+    if (fsFullMode()){
+      // режим «весь компьютер»: любые абсолютные пути всех дисков
+      const P = 'Абсолютный путь на компьютере пользователя (Windows: C:\\Users\\…; Linux/macOS: /home/…)';
+      T('fs_drives', 'Список дисков компьютера (C:\\, D:\\…) и домашняя папка — точка входа в файловую систему, если точный путь неизвестен',
+        {}, []);
+      T('fs_list', 'Показать содержимое любой папки на компьютере пользователя',
+        { path: { type: 'string', description: P + ' — папка, содержимое которой показать' } }, ['path']);
+      T('fs_read', 'Прочитать любой текстовый файл на компьютере пользователя (до 2 МБ)',
+        { path: { type: 'string', description: P } }, ['path']);
+      T('fs_write', 'Создать или перезаписать файл на компьютере пользователя. Недостающие папки создаются автоматически',
+        { path: { type: 'string', description: P }, content: { type: 'string', description: 'Полное новое содержимое файла' } },
+        ['path', 'content']);
+      T('fs_mkdir', 'Создать папку (можно вложенную) на компьютере пользователя',
+        { path: { type: 'string', description: P } }, ['path']);
+      T('fs_delete', 'Удалить файл или папку (папку — рекурсивно, необратимо!). Перед вызовом спроси подтверждение у пользователя',
+        { path: { type: 'string', description: P } }, ['path']);
+      T('fs_move', 'Переименовать или переместить файл/папку в любое место компьютера',
+        { from: { type: 'string', description: P + ' — текущее расположение' }, to: { type: 'string', description: P + ' — новое расположение' } }, ['from', 'to']);
+      T('fs_search', 'Найти файлы и папки по части имени (без учёта регистра) внутри указанной папки и её подпапок',
+        { pattern: { type: 'string', description: 'Подстрока имени, например «skill» или «.md»' }, path: { type: 'string', description: P + ' — где искать. Не указано — поиск от домашней папки' } },
+        ['pattern']);
+    } else {
     const P = 'Путь относительно рабочей папки ' + settings.workspace + ' (можно и абсолютный, если он внутри неё)';
     T('fs_list', 'Показать содержимое папки на компьютере пользователя',
       { path: { type: 'string', description: P + '. Пустая строка или «.» — сама рабочая папка' } }, ['path']);
@@ -311,6 +340,7 @@ function agentToolDefs(){
     T('fs_search', 'Найти файлы и папки по части имени (без учёта регистра) внутри рабочей папки',
       { pattern: { type: 'string', description: 'Подстрока имени, например «skill» или «.md»' }, path: { type: 'string', description: 'Искать только в этой подпапке (необязательно)' } },
       ['pattern']);
+    }
   }
   if (ghToolsAvailable()){
     T('gh_me', 'Информация о владельце GitHub-токена (логин, имя, план)', {}, []);
@@ -329,8 +359,8 @@ function agentToolDefs(){
       { name: { type: 'string' }, private: { type: 'boolean', description: 'Приватный ли (по умолчанию true)' }, description: { type: 'string', description: 'Описание репозитория' } },
       ['name']);
     if (fsToolsAvailable()){
-      T('gh_clone', 'Скачать репозиторий GitHub (zip) и распаковать его в подпапку рабочей папки — как git clone, но без git',
-        { repo: { type: 'string', description: '«владелец/имя»' }, ref: { type: 'string', description: 'Ветка или тег (по умолчанию main)' }, dest: { type: 'string', description: 'Имя подпапки (по умолчанию — имя репозитория)' } },
+      T('gh_clone', 'Скачать репозиторий GitHub (zip) и распаковать его в папку на компьютере — как git clone, но без git' + (fsFullMode() ? '. dest — абсолютный путь или имя папки (создастся в домашней)' : '. dest — имя подпапки рабочей папки'),
+        { repo: { type: 'string', description: '«владелец/имя»' }, ref: { type: 'string', description: 'Ветка или тег (по умолчанию main)' }, dest: { type: 'string', description: fsFullMode() ? 'Куда распаковать: абсолютный путь или имя папки в домашней (по умолчанию — имя репозитория)' : 'Имя подпапки (по умолчанию — имя репозитория)' } },
         ['repo']);
     }
   }
@@ -342,10 +372,14 @@ function agentSystemAddendum(){
   if (!agentActive()) return '';
   let s = '\n\nИНСТРУМЕНТЫ (режим агента)\nУ тебя есть инструменты (function calling) — используй их сам, не проси пользователя «скопировать содержимое файла» или «перейти по ссылке».';
   if (fsToolsAvailable()){
-    s += '\n- Работа с файлами компьютера: fs_list, fs_read, fs_write, fs_mkdir, fs_delete, fs_move, fs_search. Все пути — внутри рабочей папки «' + settings.workspace + '»; указывай их относительно неё (например «skills/SKILL.md»).';
+    if (fsFullMode()){
+      s += '\n- Файлы компьютера — доступен ВЕСЬ компьютер (любые диски и папки): fs_drives, fs_list, fs_read, fs_write, fs_mkdir, fs_delete, fs_move, fs_search. Пути — только абсолютные (например «C:\\Users\\Gennadiy\\Desktop\\Next Claud\\skills» или «/home/user/docs»). Не знаешь точный путь — вызови fs_drives или fs_list домашней папки и ориентируйся по ответам. Ты действуешь как обычная программа на компьютере пользователя: не проси «загрузить файл в чат» — читай его с диска сам.';
+    } else {
+      s += '\n- Работа с файлами компьютера: fs_list, fs_read, fs_write, fs_mkdir, fs_delete, fs_move, fs_search. Все пути — внутри рабочей папки «' + settings.workspace + '»; указывай их относительно неё (например «skills/SKILL.md»).';
+    }
   }
   if (ghToolsAvailable()){
-    s += '\n- GitHub' + (settings.ghUser ? ' (аккаунт ' + settings.ghUser + ')' : '') + ': gh_me, gh_repos, gh_read, gh_write, gh_delete, gh_create_repo' + (fsToolsAvailable() ? ', gh_clone (скачать репозиторий в рабочую папку)' : '') + '.';
+    s += '\n- GitHub' + (settings.ghUser ? ' (аккаунт ' + settings.ghUser + ')' : '') + ': gh_me, gh_repos, gh_read, gh_write, gh_delete, gh_create_repo' + (fsToolsAvailable() ? ', gh_clone (скачать репозиторий в папку' + (fsFullMode() ? ' на компьютере' : ' рабочей папки') + ')' : '') + '.';
   }
   s += '\nПравила:\n- Обычные действия (чтение, поиск, создание новых файлов) выполняй сразу, без лишних вопросов.\n- Перед удалением, перезаписью существующих файлов, коммитами в GitHub и другими необратимыми действиями коротко спроси подтверждение.\n- Результаты инструментов не выдумывай: что вернул вызов — то и есть. Ошибка инструмента — расскажи о ней.\n- После работы с файлами дай краткий итог: что сделано и где лежит.';
   return s;
@@ -387,38 +421,47 @@ const ghEncodePath = p => String(p || '').split('/').filter(x => x !== '').map(e
 // execAgentTool — выполняет инструмент по имени, возвращает { ok, result: string }
 async function execAgentTool(name, a){
   a = a || {};
-  const ws = () => { if (!fsToolsAvailable()) throw new Error('файловые инструменты недоступны (нужна настольная версия и рабочая папка в настройках)'); return settings.workspace.trim(); };
+  // fsQ — общая часть payload файловых запросов: режим «весь компьютер»
+  // или граница рабочей папки
+  const fsQ = () => {
+    if (!fsToolsAvailable()) throw new Error('файловые инструменты недоступны (нужна настольная версия и включённый доступ к файлам в настройках)');
+    return fsFullMode() ? { full: true } : { root: settings.workspace.trim() };
+  };
   switch (name){
+    case 'fs_drives': {
+      const j = await nsPost('/__ns/fs/drives', {});
+      return { ok: true, result: 'Диски компьютера: ' + (j.drives || []).join(', ') + '\nДомашняя папка: ' + (j.home || '?') + '\nНачинай навигацию отсюда — указывай абсолютные пути.' };
+    }
     case 'fs_list': {
-      const j = await nsPost('/__ns/fs/list', { root: ws(), path: a.path || '' });
+      const j = await nsPost('/__ns/fs/list', Object.assign(fsQ(), { path: a.path || '' }));
       const lines = (j.entries || []).map(e => (e.dir ? '📁 ' : '📄 ') + e.name + (e.dir ? '/' : ' · ' + fmtSize(e.size)) + ' · ' + e.mod);
       return { ok: true, result: 'Папка «' + (a.path || '.') + '» — ' + (j.entries || []).length + ' элементов' + (j.truncated ? ' (показаны не все)' : '') + ':\n' + (lines.join('\n') || '(пусто)') };
     }
     case 'fs_read': {
-      const j = await nsPost('/__ns/fs/read', { root: ws(), path: a.path });
+      const j = await nsPost('/__ns/fs/read', Object.assign(fsQ(), { path: a.path }));
       if (j.binary) return { ok: true, result: 'Файл «' + a.path + '» — бинарный (' + fmtSize(j.size) + '), содержимое не отдаётся' };
       return { ok: true, result: (j.truncated ? '⚠ показаны первые 2 МБ файла (' + fmtSize(j.size) + ')\n' : '') + 'Файл «' + a.path + '» (' + fmtSize(j.size) + '):\n' + (j.content || '') };
     }
     case 'fs_write': {
-      const j = await nsPost('/__ns/fs/write', { root: ws(), path: a.path, content: String(a.content != null ? a.content : '') });
+      const j = await nsPost('/__ns/fs/write', Object.assign(fsQ(), { path: a.path, content: String(a.content != null ? a.content : '') }));
       return { ok: true, result: 'Записан файл «' + a.path + '» (' + fmtSize(j.bytes) + ')' };
     }
     case 'fs_mkdir': {
-      await nsPost('/__ns/fs/mkdir', { root: ws(), path: a.path });
+      await nsPost('/__ns/fs/mkdir', Object.assign(fsQ(), { path: a.path }));
       return { ok: true, result: 'Создана папка «' + a.path + '»' };
     }
     case 'fs_delete': {
-      await nsPost('/__ns/fs/delete', { root: ws(), path: a.path });
+      await nsPost('/__ns/fs/delete', Object.assign(fsQ(), { path: a.path }));
       return { ok: true, result: 'Удалено: «' + a.path + '»' };
     }
     case 'fs_move': {
-      await nsPost('/__ns/fs/move', { root: ws(), from: a.from, to: a.to });
+      await nsPost('/__ns/fs/move', Object.assign(fsQ(), { from: a.from, to: a.to }));
       return { ok: true, result: 'Перемещено: «' + a.from + '» → «' + a.to + '»' };
     }
     case 'fs_search': {
-      const j = await nsPost('/__ns/fs/search', { root: ws(), path: a.path || '', pattern: a.pattern });
+      const j = await nsPost('/__ns/fs/search', Object.assign(fsQ(), { path: a.path || '', pattern: a.pattern }));
       const lines = (j.results || []).map(r => (r.dir ? '📁 ' : '📄 ') + r.path + (r.dir ? '/' : ' · ' + fmtSize(r.size)));
-      return { ok: true, result: 'Найдено ' + (j.results || []).length + (j.truncated ? '+ (обрезано)' : '') + ' по «' + a.pattern + '»:\n' + (lines.join('\n') || '(ничего не найдено)') };
+      return { ok: true, result: 'Найдено ' + (j.results || []).length + (j.truncated ? '+ (обрезано)' : '') + ' по «' + a.pattern + '» в ' + (j.scanned || '.') + ':\n' + (lines.join('\n') || '(ничего не найдено)') };
     }
     case 'gh_me': {
       const j = await ghCall('GET', '/user');
@@ -475,8 +518,8 @@ async function execAgentTool(name, a){
       return { ok: true, result: 'Создан репозиторий ' + j.full_name + (j.private ? ' (приватный)' : ' (публичный)') + ' — ' + j.html_url };
     }
     case 'gh_clone': {
-      const j = await nsPost('/__ns/gh/clone', { root: ws(), repo: a.repo, ref: a.ref || '', token: settings.ghToken, dest: a.dest || '' });
-      return { ok: true, result: 'Репозиторий ' + a.repo + ' (ветка ' + j.ref + ') скачан в «' + j.dest + '» — файлов: ' + j.files };
+      const j = await nsPost('/__ns/gh/clone', Object.assign(fsQ(), { repo: a.repo, ref: a.ref || '', token: settings.ghToken, dest: a.dest || '' }));
+      return { ok: true, result: 'Репозиторий ' + a.repo + ' (ветка ' + j.ref + ') скачан в «' + (j.destPath || j.dest) + '» — файлов: ' + j.files };
     }
   }
   return { ok: false, result: 'Неизвестный инструмент: ' + name };
@@ -499,6 +542,7 @@ function toolArgSummary(name, args){
   try { args = args ? JSON.parse(args) : {}; } catch(e){ return ''; }
   const s = v => String(v == null ? '' : v);
   switch (name){
+    case 'fs_drives': return '';
     case 'fs_list': case 'fs_read': case 'fs_write': case 'fs_mkdir': case 'fs_delete':
       return s(args.path);
     case 'fs_move': return s(args.from) + ' → ' + s(args.to);
@@ -1364,7 +1408,9 @@ function openSettings(){
   $('#tempVal').textContent = settings.temp;
   $('#setStream').checked = !!settings.stream;
   $('#setAgent').checked = !!settings.agentMode;
+  $('#setFsMode').value = settings.fsMode === 'full' ? 'full' : 'folder';
   $('#setWorkspace').value = settings.workspace || '';
+  syncFsModeUI();
   $('#setGhToken').value = settings.ghToken || '';
   updateAgentHints();
   fillModelList();
@@ -1509,6 +1555,7 @@ function saveSettings(){
   settings.temp = $('#setTemp').value;
   settings.stream = $('#setStream').checked;
   settings.agentMode = $('#setAgent').checked;
+  settings.fsMode = $('#setFsMode').value === 'full' ? 'full' : 'folder';
   settings.workspace = $('#setWorkspace').value.trim();
   const newGh = $('#setGhToken').value.trim();
   if (newGh !== settings.ghToken) settings.ghUser = ghUserChecked || ''; // токен сменился — логин сбрасывается
@@ -1530,7 +1577,7 @@ function applySettingsToUI(){
   if (ab){
     const n = agentActive() ? agentToolDefs().length : 0;
     ab.classList.toggle('hidden', !n);
-    if (n) ab.title = 'Режим агента активен: ' + n + ' инструментов' + (fsToolsAvailable() ? '\nРабочая папка: ' + settings.workspace : '') + (settings.ghUser ? '\nGitHub: ' + settings.ghUser : '') + '\nКлик — настройки';
+    if (n) ab.title = 'Режим агента активен: ' + n + ' инструментов' + (fsToolsAvailable() ? (fsFullMode() ? '\nФайлы: весь компьютер (абсолютные пути)' : '\nРабочая папка: ' + settings.workspace) : '') + (settings.ghUser ? '\nGitHub: ' + settings.ghUser : '') + '\nКлик — настройки';
   }
   setConn('');
   updateModelPriceHint();
@@ -1543,11 +1590,14 @@ let ghUserChecked = '';
 function updateAgentHints(){
   const ws = $('#wsHint');
   if (ws){
+    const mode = $('#setFsMode') ? $('#setFsMode').value : 'folder';
     const path = $('#setWorkspace').value.trim();
     if (!isExeMode()){
-      ws.innerHTML = 'Файловые инструменты работают только в <b>настольной версии</b> (NeuroShell.exe). Папку можно задать заранее — в exe она заработает. GitHub-инструменты доступны и в вебе.';
+      ws.innerHTML = 'Файловые инструменты работают только в <b>настольной версии</b> (NeuroShell.exe). Режим доступа и папку можно задать заранее — в exe они заработают. GitHub-инструменты доступны и в вебе.';
+    } else if (mode === 'full'){
+      ws.innerHTML = 'Настольная версия · режим <b>«весь компьютер»</b>: модель читает, пишет и ищет файлы по любым абсолютным путям (C:\\…, D:\\…) — как обычная программа. Перед удалением и перезаписью она спросит подтверждение.';
     } else if (!path){
-      ws.innerHTML = 'Укажите папку — модель не сможет работать с файлами, пока она не задана.';
+      ws.innerHTML = 'Укажите папку — или переключите режим на «весь компьютер». Модель не сможет работать с файлами, пока доступ не настроен.';
     } else {
       ws.innerHTML = 'Настольная версия · папка: <b>' + esc(path) + '</b>. Модель не выходит за её пределы.';
     }
@@ -1563,6 +1613,29 @@ function updateAgentHints(){
       gh.textContent = 'Токен хранится локально. Права: репозитории (чтение/запись).';
     }
   }
+}
+
+// syncFsModeUI — показывает/прячет поле рабочей папки в зависимости от режима
+function syncFsModeUI(){
+  const mode = $('#setFsMode') ? $('#setFsMode').value : 'folder';
+  const wsField = $('#wsField');
+  if (wsField) wsField.classList.toggle('hidden', mode === 'full');
+}
+
+// onFsModeChange — переключение режима доступа к файлам; «весь компьютер» —
+// только после явного подтверждения
+function onFsModeChange(){
+  const sel = $('#setFsMode');
+  if (sel.value !== 'full'){
+    syncFsModeUI();
+    updateAgentHints();
+    return;
+  }
+  confirmDialog('Разрешить модели доступ ко ВСЕМУ компьютеру (любые диски и папки, абсолютные пути)? Это как дать программе полный доступ к файловой системе. Модель продолжит спрашивать подтверждение перед удалением и перезаписью.', ok => {
+    if (!ok) sel.value = 'folder';
+    syncFsModeUI();
+    updateAgentHints();
+  });
 }
 
 // pickWsHome — подставить домашнюю папку (кнопка «Домой»)
@@ -1915,6 +1988,7 @@ function init(){
   $('#btnHideCorsHint').addEventListener('click', () => $('#corsHint').classList.add('hidden'));
 
   // инструменты агента
+  $('#setFsMode').addEventListener('change', onFsModeChange);
   $('#btnWsHome').addEventListener('click', pickWsHome);
   $('#btnTestGh').addEventListener('click', testGhToken);
   $('#btnRevealGh').addEventListener('click', () => {
@@ -1938,8 +2012,8 @@ function init(){
   $('#btnWipe').addEventListener('click', wipeAll);
 
   // подтверждение
-  $('#confirmYes').addEventListener('click', () => { $('#confirmModal').classList.add('hidden'); if (confirmCb) confirmCb(); confirmCb = null; });
-  $('#confirmNo').addEventListener('click', () => { $('#confirmModal').classList.add('hidden'); confirmCb = null; });
+  $('#confirmYes').addEventListener('click', () => { $('#confirmModal').classList.add('hidden'); if (confirmCb) confirmCb(true); confirmCb = null; });
+  $('#confirmNo').addEventListener('click', () => { $('#confirmModal').classList.add('hidden'); if (confirmCb) confirmCb(false); confirmCb = null; });
 
   // артефакты
   $('#btnArtifactClose').addEventListener('click', () => $('#artifactPanel').classList.add('hidden'));

@@ -212,6 +212,15 @@
         <span class="field-hint">Модель сама читает, пишет и ищет файлы, скачивает и обновляет репозитории GitHub через инструменты (function calling). Перед удалением и перезаписью — спросит подтверждение.</span>
 
         <label class="field">
+          <span class="field-label">Режим доступа к файлам</span>
+          <select id="setFsMode">
+            <option value="folder">Рабочая папка — модель заперта внутри неё</option>
+            <option value="full">Весь компьютер — любые диски, абсолютные пути</option>
+          </select>
+          <span class="field-hint">«Весь компьютер» даёт модели доступ ко всей файловой системе, как обычной программе: C:\…, D:\…, любые папки.</span>
+        </label>
+
+        <label class="field" id="wsField">
           <span class="field-label">Рабочая папка (граница доступа модели к файлам)</span>
           <div class="field-row">
             <input id="setWorkspace" type="text" placeholder="например, C:\Users\Gennadiy\Desktop\Next Claud" spellcheck="false" autocomplete="off">

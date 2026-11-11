@@ -3,6 +3,7 @@
 // компьютера и скачивает репозитории с GitHub:
 //
 //	POST /__ns/fs/home    — путь к домашней папке пользователя
+//	POST /__ns/fs/drives  — диски компьютера и домашняя папка (навигация с корня)
 //	POST /__ns/fs/list    — содержимое папки
 //	POST /__ns/fs/read    — прочитать файл
 //	POST /__ns/fs/write   — записать файл
@@ -10,11 +11,18 @@
 //	POST /__ns/fs/delete  — удалить файл/папку
 //	POST /__ns/fs/move    — переименовать/переместить
 //	POST /__ns/fs/search  — поиск файлов по имени
-//	POST /__ns/gh/clone   — скачать репозиторий GitHub в рабочую папку
+//	POST /__ns/gh/clone   — скачать репозиторий GitHub в папку
+//
+// Два режима доступа (поле "full" в запросе):
+//   - рабочая папка (по умолчанию): все пути обязаны лежать внутри
+//     папки root, заданной пользователем; выход наружу через .. или
+//     симлинки запрещён;
+//   - весь компьютер (full:true): модель работает с любыми абсолютными
+//     путями всех дисков — как обычная программа; включается осознанно
+//     в настройках, подтверждение не требуется для чтения, но системный
+//     промпт обязывает модель спрашивать перед удалением/перезаписью.
 //
 // Безопасность:
-//   - все пути обязаны лежать внутри рабочей папки (root), заданной
-//     пользователем в настройках; выход наружу через .. или симлинки запрещён;
 //   - каждый запрос должен нести заголовок X-NS-Agent — он заставляет браузер
 //     делать preflight, поэтому сторонний сайт не сможет отправить запрос
 //     «вслепую» (защита от drive-by);
@@ -32,6 +40,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -39,10 +48,10 @@ import (
 )
 
 const (
-	fsMaxRead  = 2 << 20  // 2 МБ на чтение файла
-	fsMaxWrite = 8 << 20  // 8 МБ на запись файла
-	fsMaxList  = 1000     // максимум записей в списке папки
-	fsMaxFind  = 200      // максимум результатов поиска
+	fsMaxRead  = 2 << 20 // 2 МБ на чтение файла
+	fsMaxWrite = 8 << 20 // 8 МБ на запись файла
+	fsMaxList  = 1000    // максимум записей в списке папки
+	fsMaxFind  = 200     // максимум результатов поиска
 )
 
 // registerAgentAPI подключает файловые и GitHub-инструменты к мультиплексору.
@@ -54,6 +63,8 @@ func registerAgentAPI(mux *http.ServeMux) {
 		switch strings.TrimPrefix(r.URL.Path, "/__ns/fs/") {
 		case "home":
 			fsHome(w, r)
+		case "drives":
+			fsDrives(w, r)
 		case "list":
 			fsList(w, r)
 		case "read":
@@ -126,7 +137,46 @@ func jsonErr(w http.ResponseWriter, code int, msg string) {
 	json.NewEncoder(w).Encode(map[string]any{"error": msg})
 }
 
-// ---- разрешение путей внутри рабочей папки ----
+// ---- разрешение путей: два режима доступа ----
+
+// fsScope — рамки доступа текущего запроса. full=true открывает весь
+// компьютер (абсолютные пути любых дисков), иначе действует граница
+// рабочей папки root — как в прежних версиях.
+type fsScope struct {
+	full      bool
+	root      string
+	rootGiven bool
+}
+
+// newScope разбирает запрос и возвращает рамки доступа.
+func newScope(q fsReq) (fsScope, error) {
+	if q.Full {
+		return fsScope{full: true}, nil
+	}
+	root, err := fsRoot(q.Root)
+	if err != nil {
+		return fsScope{}, err
+	}
+	return fsScope{root: root, rootGiven: true}, nil
+}
+
+// resolve превращает путь запроса в абсолютный путь на диске.
+// Режим full — любой абсолютный путь компьютера; режим папки —
+// путь внутри рабочей папки (выход через .. и симлинки запрещён).
+func (sc fsScope) resolve(p string) (string, error) {
+	p = strings.TrimSpace(p)
+	if sc.full {
+		if p == "" || p == "." {
+			home, _ := os.UserHomeDir()
+			return "", errors.New("в режиме «весь компьютер» укажите абсолютный путь (например C:\\Users\\Gennadiy\\Desktop или /home/user); домашняя папка: " + home)
+		}
+		if !filepath.IsAbs(p) {
+			return "", errors.New("в режиме «весь компьютер» путь должен быть абсолютным (C:\\… или /…): " + p)
+		}
+		return filepath.Clean(p), nil
+	}
+	return fsPath(sc.root, p)
+}
 
 // fsRoot проверяет и возвращает чистый абсолютный путь рабочей папки.
 func fsRoot(root string) (string, error) {
@@ -186,6 +236,7 @@ func fsPath(root, sub string) (string, error) {
 
 type fsReq struct {
 	Root    string `json:"root"`
+	Full    bool   `json:"full"` // режим «весь компьютер» (без границы папки)
 	Path    string `json:"path"`
 	From    string `json:"from"`
 	To      string `json:"to"`
@@ -203,6 +254,24 @@ func fsHome(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"home": h})
 }
 
+// fsDrives — диски компьютера (Windows) или корень «/» (Unix) и домашняя
+// папка. Точка входа модели в режим «весь компьютер».
+func fsDrives(w http.ResponseWriter, r *http.Request) {
+	var drives []string
+	if runtime.GOOS == "windows" {
+		for c := 'A'; c <= 'Z'; c++ {
+			vol := string(c) + ":\\"
+			if fi, err := os.Stat(vol); err == nil && fi.IsDir() {
+				drives = append(drives, vol)
+			}
+		}
+	} else {
+		drives = []string{"/"}
+	}
+	home, _ := os.UserHomeDir()
+	jsonOK(w, map[string]any{"drives": drives, "home": home})
+}
+
 // fsList — содержимое папки: имя, размер, признак каталога, изменение.
 func fsList(w http.ResponseWriter, r *http.Request) {
 	var q fsReq
@@ -210,12 +279,12 @@ func fsList(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		return
 	}
-	root, err := fsRoot(q.Root)
+	sc, err := newScope(q)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	dir, err := fsPath(root, q.Path)
+	dir, err := sc.resolve(q.Path)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -274,12 +343,12 @@ func fsRead(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		return
 	}
-	root, err := fsRoot(q.Root)
+	sc, err := newScope(q)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := fsPath(root, q.Path)
+	p, err := sc.resolve(q.Path)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -326,12 +395,12 @@ func fsWrite(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		return
 	}
-	root, err := fsRoot(q.Root)
+	sc, err := newScope(q)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := fsPath(root, q.Path)
+	p, err := sc.resolve(q.Path)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -340,7 +409,7 @@ func fsWrite(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "контент больше 8 МБ")
 		return
 	}
-	if p == root {
+	if sc.rootGiven && p == sc.root {
 		jsonErr(w, http.StatusBadRequest, "нужен путь файла, а не рабочей папки")
 		return
 	}
@@ -362,12 +431,12 @@ func fsMkdir(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		return
 	}
-	root, err := fsRoot(q.Root)
+	sc, err := newScope(q)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := fsPath(root, q.Path)
+	p, err := sc.resolve(q.Path)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -386,17 +455,17 @@ func fsDelete(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		return
 	}
-	root, err := fsRoot(q.Root)
+	sc, err := newScope(q)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := fsPath(root, q.Path)
+	p, err := sc.resolve(q.Path)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if p == root {
+	if sc.rootGiven && p == sc.root {
 		jsonErr(w, http.StatusBadRequest, "нельзя удалить саму рабочую папку")
 		return
 	}
@@ -411,29 +480,29 @@ func fsDelete(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"deleted": q.Path})
 }
 
-// fsMove — переименовать/переместить файл или папку внутри рабочей папки.
+// fsMove — переименовать/переместить файл или папку.
 func fsMove(w http.ResponseWriter, r *http.Request) {
 	var q fsReq
 	if err := readJSON(r, &q); err != nil {
 		jsonErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		return
 	}
-	root, err := fsRoot(q.Root)
+	sc, err := newScope(q)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	from, err := fsPath(root, q.From)
+	from, err := sc.resolve(q.From)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	to, err := fsPath(root, q.To)
+	to, err := sc.resolve(q.To)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if from == root || to == root {
+	if sc.rootGiven && (from == sc.root || to == sc.root) {
 		jsonErr(w, http.StatusBadRequest, "нельзя двигать саму рабочую папку")
 		return
 	}
@@ -454,25 +523,36 @@ func fsMove(w http.ResponseWriter, r *http.Request) {
 
 // fsSearch — поиск файлов по подстроке в имени (без учёта регистра),
 // с обходом вложенных папок. Служебные каталоги (.git, node_modules, …)
-// пропускаются.
+// пропускаются. В режиме «весь компьютер» без path поиск идёт от
+// домашней папки; предохранитель — 10 секунд на обход.
 func fsSearch(w http.ResponseWriter, r *http.Request) {
 	var q fsReq
 	if err := readJSON(r, &q); err != nil {
 		jsonErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		return
 	}
-	root, err := fsRoot(q.Root)
+	sc, err := newScope(q)
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	start := root
+	start := ""
 	if strings.TrimSpace(q.Path) != "" {
-		start, err = fsPath(root, q.Path)
+		start, err = sc.resolve(q.Path)
 		if err != nil {
 			jsonErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
+	} else if sc.full {
+		// весь компьютер без точки старта — ищем от домашней папки
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			jsonErr(w, http.StatusInternalServerError, "не удалось определить домашнюю папку: "+herr.Error())
+			return
+		}
+		start = home
+	} else {
+		start = sc.root
 	}
 	pattern := strings.ToLower(strings.TrimSpace(q.Pattern))
 	if pattern == "" {
@@ -487,9 +567,14 @@ func fsSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	var hits []hit
 	truncated := false
+	deadline := time.Now().Add(10 * time.Second) // предохранитель от огромных деревьев
 	var walk func(dir, rel string) error
 	walk = func(dir, rel string) error {
 		if truncated {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			truncated = true
 			return nil
 		}
 		ents, err := os.ReadDir(dir)
@@ -524,28 +609,29 @@ func fsSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	}
-	deadline := time.Now().Add(8 * time.Second) // предохранитель от огромных деревьев
 	_ = walk(start, "")
-	_ = deadline
-	jsonOK(w, map[string]any{"results": hits, "truncated": truncated})
+	jsonOK(w, map[string]any{"path": q.Path, "scanned": start, "results": hits, "truncated": truncated})
 }
 
 // ghClone — скачать репозиторий GitHub (zip-архив) и распаковать его
-// в рабочую папку. Приватные репозитории — с токеном. Ветка по умолчанию
-// main, при 404 пробуется master.
+// в папку на компьютере. Приватные репозитории — с токеном. Ветка по
+// умолчанию main, при 404 пробуется master. В режиме «весь компьютер»
+// dest может быть абсолютным путём; относительное имя создаётся в
+// домашней папке.
 func ghClone(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		Root  string `json:"root"`
+		Full  bool   `json:"full"`  // режим «весь компьютер»
 		Repo  string `json:"repo"`  // "owner/name"
 		Ref   string `json:"ref"`   // ветка или тег, по умолчанию main
 		Token string `json:"token"` // GitHub PAT (для приватных репо)
-		Dest  string `json:"dest"`  // имя подпапки; по умолчанию — имя репо
+		Dest  string `json:"dest"`  // куда распаковать (абсолютный путь или имя подпапки)
 	}
 	if err := readJSON(r, &q); err != nil {
 		jsonErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		return
 	}
-	root, err := fsRoot(q.Root)
+	sc, err := newScope(fsReq{Root: q.Root, Full: q.Full})
 	if err != nil {
 		jsonErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -566,10 +652,24 @@ func ghClone(w http.ResponseWriter, r *http.Request) {
 	if dest == "" {
 		dest = strings.Split(repo, "/")[1]
 	}
-	destPath, err := fsPath(root, dest)
-	if err != nil {
-		jsonErr(w, http.StatusBadRequest, err.Error())
-		return
+	var destPath string
+	if sc.full {
+		if filepath.IsAbs(dest) {
+			destPath = filepath.Clean(dest)
+		} else {
+			home, herr := os.UserHomeDir()
+			if herr != nil {
+				jsonErr(w, http.StatusInternalServerError, "не удалось определить домашнюю папку: "+herr.Error())
+				return
+			}
+			destPath = filepath.Join(home, dest)
+		}
+	} else {
+		destPath, err = fsPath(sc.root, dest)
+		if err != nil {
+			jsonErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	if _, err := os.Stat(destPath); err == nil {
 		jsonErr(w, http.StatusConflict, "папка уже существует: "+dest+" — выберите другое имя (dest)")
@@ -588,7 +688,7 @@ func ghClone(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, "не удалось распаковать: "+err.Error())
 		return
 	}
-	jsonOK(w, map[string]any{"dest": dest, "ref": usedRef, "files": files})
+	jsonOK(w, map[string]any{"dest": dest, "destPath": destPath, "ref": usedRef, "files": files})
 }
 
 // downloadRepoZip тянет zipball через api.github.com (работает и для

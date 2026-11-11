@@ -82,15 +82,19 @@ class Handler(BaseHTTPRequestHandler):
 
         # Режим агента: первый запрос с tools → просим вызвать инструмент;
         # когда результаты вернулись — обычный текстовый ответ.
+        # Если среди инструментов есть fs_drives — включён режим «весь
+        # компьютер»: спрашиваем диски; иначе листаем рабочую папку.
         if has_tools and not tool_results:
             completion_tokens = 30
+            tool_names = [t.get("function", {}).get("name", "") for t in req.get("tools", [])]
+            if "fs_drives" in tool_names:
+                call_name, call_args = "fs_drives", "{}"
+            else:
+                call_name, call_args = "fs_list", json.dumps({"path": ""}, ensure_ascii=False)
             tool_call = {
                 "id": "call_mock_1",
                 "type": "function",
-                "function": {
-                    "name": "fs_list",
-                    "arguments": json.dumps({"path": ""}, ensure_ascii=False),
-                },
+                "function": {"name": call_name, "arguments": call_args},
             }
             finish = "tool_calls"
             reply = None
