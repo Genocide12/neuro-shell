@@ -2,7 +2,7 @@
 'use strict';
 
 /* ================== КОНФИГ И ПРЕСЕТЫ ================== */
-const NS_VERSION = '1.0.0';
+const NS_VERSION = '1.0.1';
 const LS_PREFIX = 'neuroshell:';
 
 const PRESETS = {
@@ -706,7 +706,11 @@ async function runCompletion(chat, atts){
       box.removeChild(el);
     } else {
       setConn('err');
-      const em = { role: 'error', content: 'Ошибка запроса: ' + (err && err.message ? err.message : String(err)) + '\n\nПроверьте ключ, Base URL и модель в настройках. Код ошибки HTTP 401 обычно означает неверный ключ, 404 — неверный адрес или имя модели.' };
+      const isNetErr = klassifyFetchError(err) === 'network';
+      const corsNote = (isNetErr && !isExeMode())
+        ? '\n\nСкорее всего это CORS-ограничение браузера: сервер не проходит preflight-проверку (ответ OPTIONS без Access-Control-Allow-Origin). Ключ при этом может быть рабочим. Решения:\n1) Скачайте настольную NeuroShell.exe (ссылка в README) — она ходит в API напрямую, без CORS.\n2) Почините CORS на сервере: в nginx нужно, чтобы ответ на OPTIONS содержал заголовок Access-Control-Allow-Origin (инструкция в README, раздел «CORS»).'
+        : '\n\nПроверьте ключ, Base URL и модель в настройках. Код ошибки HTTP 401 обычно означает неверный ключ, 404 — неверный адрес или имя модели.';
+      const em = { role: 'error', content: 'Ошибка запроса: ' + (err && err.message ? err.message : String(err)) + corsNote };
       chat.messages[phIdx] = em;
       renderMessages(chat);
     }
@@ -839,7 +843,49 @@ async function loadModels(silent){
       if (!silent) toast('Найдено моделей: ' + list.length, 'ok');
     } else if (!silent) toast('Список моделей пуст', 'warn');
   } catch(e){
+    // fallback: в веб-версии CORS-preflight может резать запрос с Authorization.
+    // Простой GET без кастомных заголовков preflight не требует — список моделей
+    // /v1/models на большинстве прокси доступен и без ключа.
+    if (!isExeMode() && klassifyFetchError(e) === 'network'){
+      try {
+        const resp2 = await fetch(apiBase() + '/models');
+        if (resp2.ok){
+          const j2 = await resp2.json();
+          const list2 = (j2.data || []).map(x => x.id).filter(Boolean);
+          if (list2.length){
+            modelListCache = list2;
+            fillModelList(list2);
+            if (!silent) toast('Модели загружены (без ключа, из-за CORS веб-версии)', 'ok');
+            return;
+          }
+        }
+      } catch(e2){ /* останемся с диагностикой ниже */ }
+    }
     if (!silent) toast('Не удалось получить список моделей: ' + e.message, 'err');
+  }
+}
+
+// klassifyFetchError различает «нет сети», «CORS/preflight» и «сервер ответил».
+// TypeError из fetch в браузере возникает ДО отправки/получения ответа (сеть или CORS),
+// а ответ сервера (401/404/500) приходит как обычный resp.status — их не путаем.
+function klassifyFetchError(err){
+  const m = err && err.message ? String(err.message) : String(err);
+  // «Failed to fetch» (Firefox: NetworkError) — браузер не смог завершить запрос
+  if (/failed to fetch|networkerror|load failed|network error/i.test(m))
+    return 'network';
+  return 'unknown';
+}
+
+// corsAllowed проверяет CORS-дружелюбие сервера для веб-версии:
+// простой GET без кастомных заголовков не требует preflight, поэтому ответ сервера
+// виден как normally: 200/401/… → CORS на обычные запросы не мешает.
+// Если даже такой GET падает с TypeError — сервер недоступен или полностью блокирует origin.
+async function corsAllowed(base){
+  try {
+    await fetch(base + '/models', { mode: 'cors' }); // без Authorization — нет preflight
+    return true; // любой HTTP-статус означает: запрос прошёл, CORS обычный пропускает
+  } catch(e){
+    return false;
   }
 }
 
@@ -848,9 +894,11 @@ async function testKey(){
   const base = $('#setBase').value.trim() || DEFAULTS.baseUrl;
   const btn = $('#btnTestKey');
   btn.disabled = true; btn.textContent = '…';
+  let b = base.replace(/\/+$/, '');
+  if (!/\/v\d+$/.test(b) && !b.endsWith('/api')) b += '/v1';
   try {
-    let b = base.replace(/\/+$/, '');
-    if (!/\/v\d+$/.test(b) && !b.endsWith('/api')) b += '/v1';
+    // 1) сначала авторизованный запрос — в exe-режиме он идёт через локальный прокси (без CORS),
+    //    в вебе при «сыром» прокси без CORS-заголовков браузер ругнётся «Failed to fetch»
     const resp = await fetch(b + '/models', { headers: key ? { 'Authorization': 'Bearer ' + key } : {} });
     if (resp.status === 401 || resp.status === 403) throw new Error('HTTP ' + resp.status + ' — ключ отклонён');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -862,8 +910,26 @@ async function testKey(){
     toast('Соединение успешно' + (list.length ? ' · моделей: ' + list.length : '') + (!hasModel ? ' · выбранной модели нет в списке!' : ''), hasModel ? 'ok' : 'warn', 4200);
     setConn('ok');
   } catch(e){
+    // 2) диагностируем причину, чтобы не гадать «ключ» vs «сеть» vs «CORS»
+    let why = '';
+    let cls = klassifyFetchError(e);
+    if (cls === 'network' && !isExeMode()){
+      const plainOk = await corsAllowed(b);
+      if (plainOk){
+        // простой GET без ключа проходит, а с заголовком Authorization — нет:
+        // это классический CORS-preflight провал на стороне API-сервера
+        why = ' — сервер не проходит CORS-preflight (ответ OPTIONS без Access-Control-Allow-Origin). Ваш ключ и сервер в порядке: в чате это проявится как «Failed to fetch». Веб-версию браузер ограничивает, а настольная (NeuroShell.exe) ходит в API напрямую — скачайте её в README или почините CORS на сервере (см. подсказку ниже)';
+        setConn('err');
+        toast('Проверка не удалась' + why, 'err', 12000);
+        showCorsHint();
+        return;
+      }
+      why = ' — сервер недоступен (проверьте адрес и интернет)';
+    } else if (e && e.message) {
+      why = ' — ' + e.message;
+    }
     setConn('err');
-    toast('Проверка не удалась: ' + e.message, 'err', 4200);
+    toast('Проверка не удалась: ' + (cls === 'network' ? 'нет соединения с сервером' : (e && e.message ? e.message : String(e))) + why, 'err', 8000);
   } finally {
     btn.disabled = false; btn.textContent = 'Проверить';
   }
@@ -894,6 +960,15 @@ function applySettingsToUI(){
   $('#modelBadge').textContent = settings.model || '—';
   $('#modelBadge').title = 'Модель: ' + settings.model + '\nBase URL: ' + apiBase();
   setConn('');
+}
+
+// showCorsHint показывает развёрнутую подсказку в настройках, когда веб-версию
+// блокирует CORS API-сервера (префикс OPTIONS без Access-Control-Allow-Origin).
+// Вызывается из testKey() при соответствующей диагностике.
+function showCorsHint(){
+  const hint = $('#corsHint');
+  if (!hint) return;
+  hint.classList.remove('hidden');
 }
 
 function applyPresetToTextarea(){
@@ -1052,6 +1127,7 @@ function init(){
   });
   $('#btnTestKey').addEventListener('click', testKey);
   $('#btnReloadModels').addEventListener('click', () => loadModels(false));
+  $('#btnHideCorsHint').addEventListener('click', () => $('#corsHint').classList.add('hidden'));
   $('#setTemp').addEventListener('input', e => $('#tempVal').textContent = e.target.value);
   $('#setPreset').addEventListener('change', applyPresetToTextarea);
   $('#btnExportSettings').addEventListener('click', exportSettings);

@@ -37,7 +37,7 @@
         Выход
       </button>
       <div class="sb-ver">
-        <span>v<span class="ns-version">1.0.0</span></span>
+        <span>v<span class="ns-version">1.0.1</span></span>
         <a href="https://github.com/Genocide12/neuro-shell/releases" target="_blank" rel="noopener">Релизы</a>
       </div>
     </div>
@@ -133,6 +133,25 @@
           <input id="setBase" type="text" placeholder="https://api.gym-rat.online/v1" spellcheck="false">
           <span class="field-hint">Подходит любой сервис формата /v1/chat/completions: ваш прокси, OpenRouter, OpenAI, локальная ollama и т.п.</span>
         </label>
+
+        <div id="corsHint" class="cors-hint hidden">
+          <div class="cors-hint-title">Браузер блокирует запросы к этому API (CORS)</div>
+          <p>Сервер не отвечает на preflight-запрос OPTIONS заголовком <code>Access-Control-Allow-Origin</code>, поэтому браузер не пускает запросы с вашим ключом. Сам ключ и сервер при этом могут быть полностью рабочими.</p>
+          <p><b>Быстрое решение:</b> скачайте настольную версию <b>NeuroShell.exe</b> — она открывает этот же интерфейс, но ходит в API напрямую через локальный прокси, без ограничений CORS. Ссылка — в README репозитория (Releases).</p>
+          <p><b>Если вы управляете сервером:</b> добавьте в nginx (в блок <code>server</code> или <code>location</code> прокси) ответ на preflight:</p>
+          <pre>location / {
+    if ($request_method = OPTIONS) {
+        add_header Access-Control-Allow-Origin $http_origin always;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type, anthropic-version, x-api-key" always;
+        add_header Access-Control-Max-Age 86400 always;
+        return 204;
+    }
+    # … остальной конфиг проксирования …
+}</pre>
+          <p>После правки nginx: <code>nginx -t && systemctl reload nginx</code>. Подробнее — README, раздел «CORS».</p>
+          <button type="button" class="btn-ghost" id="btnHideCorsHint">Понятно, скрыть</button>
+        </div>
 
         <label class="field">
           <span class="field-label">Модель</span>

@@ -19,6 +19,7 @@
 #artifactPanel{width:46%;min-width:360px;border-left:1px solid var(--line);background:var(--bg2);display:flex;flex-direction:column;}.ap-head{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}.ap-title{font-weight:700;font-size:13.5px;flex:none}.ap-tabs{flex:1;display:flex;gap:6px;overflow-x:auto}.ap-tab{font-size:12px;color:var(--txt2);padding:4px 12px;border-radius:99px;border:1px solid var(--line);white-space:nowrap;}.ap-tab.active{color:var(--acc2);border-color:var(--acc);background:var(--acc-dim)}.ap-actions{display:flex;gap:4px;flex:none}#artifactFrame{flex:1;border:none;background:#fff}
 .modal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:rgba(5,7,12,.66);backdrop-filter:blur(4px);padding:20px;}.modal-card{width:min(680px,100%);max-height:min(86vh,860px);display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--line2);border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.5);animation:rise .18s ease;}.modal-card-sm{width:min(400px,100%)}.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px;border-bottom:1px solid var(--line)}.modal-head h2{font-size:17px}.modal-body{overflow-y:auto;padding:6px 20px 16px}.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:12px 20px 16px;border-top:1px solid var(--line)}.set-group{padding:14px 0 4px;border-bottom:1px dashed var(--line)}.set-group:last-child{border-bottom:none}.set-group h3{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3);margin-bottom:12px}.field{display:block;margin-bottom:14px}.field-label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}.field input[type=text],.field input[type=password],.field select,.field textarea{width:100%;background:var(--bg3);border:1px solid var(--line2);border-radius:9px;color:var(--txt);font:inherit;font-size:13.5px;padding:9px 12px;outline:none;}.field textarea{font-family:var(--mono);font-size:12.5px;line-height:1.55;resize:vertical}.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--acc)}.field-row{display:flex;gap:8px;align-items:center}.field-row input{flex:1;min-width:0}.field-hint{display:block;font-size:11.5px;color:var(--txt3);margin-top:5px;line-height:1.45}.field input[type=range]{width:100%;accent-color:var(--acc)}.field-switch{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.field-switch .field-label{margin:0}.switch{position:relative;display:inline-block;flex:none}.switch input{position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;margin:0}.switch i{display:block;width:40px;height:22px;border-radius:99px;background:var(--bg4);border:1px solid var(--line2);position:relative;transition:background .18s;}.switch i::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--txt2);transition:transform .18s,background .18s;}.switch input:checked+i{background:var(--acc);border-color:var(--acc)}.switch input:checked+i::after{transform:translateX(18px);background:#fff}.btn-danger{color:var(--err)!important;border:1px solid rgba(255,92,116,.3);border-radius:9px}.btn-danger:hover{background:rgba(255,92,116,.1)}.btn-danger-solid{background:var(--err)!important;box-shadow:none!important}.confirm-text{padding:26px 22px;font-size:15px;line-height:1.5}
 #toasts{position:fixed;bottom:22px;right:22px;z-index:200;display:flex;flex-direction:column;gap:8px}.toast{display:flex;align-items:center;gap:9px;padding:11px 16px;border-radius:11px;font-size:13.5px;background:var(--bg4);border:1px solid var(--line2);box-shadow:0 10px 30px rgba(0,0,0,.4);animation:toastIn .2s ease;max-width:360px;}.toast.ok{border-color:rgba(61,220,151,.4)}.toast.err{border-color:rgba(255,92,116,.4)}.toast.warn{border-color:rgba(255,180,84,.4)}@keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}.toast.out{opacity:0;transform:translateX(20px);transition:all .25s}
+.cors-hint{margin:10px 0 4px;padding:14px 16px;border-radius:12px;font-size:12.5px;line-height:1.55;background:rgba(255,180,84,.07);border:1px solid rgba(255,180,84,.35);color:var(--txt2);}.cors-hint-title{font-weight:700;color:var(--warn);font-size:13px;margin-bottom:8px}.cors-hint p{margin:7px 0;color:var(--txt2)}.cors-hint code{font-family:var(--mono);font-size:11.5px;background:var(--bg3);padding:1px 5px;border-radius:5px;color:var(--acc2);}.cors-hint pre{font-family:var(--mono);font-size:11px;line-height:1.5;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;overflow-x:auto;white-space:pre;color:var(--txt2);}.cors-hint .btn-ghost{margin-top:6px}
 @media (max-width:900px){#artifactPanel{position:fixed;inset:0;width:100%;min-width:0;z-index:40}.model-badge{max-width:120px}}@media (max-width:760px){#sidebar{position:fixed;top:0;left:0;bottom:0;z-index:35;box-shadow:14px 0 40px rgba(0,0,0,.4)}#sidebar.collapsed{margin-left:0;transform:translateX(-105%)}#sbOverlay.show{display:block}#btnCloseSidebar{display:grid}#btnOpenSidebar{display:grid}.chat-col{padding:18px 12px 10px}#composerWrap{padding:6px 10px 10px}.msg-actions{opacity:1;margin-left:0}}@media (min-width:761px){#btnCloseSidebar{display:grid}#btnOpenSidebar{display:none}}
 </style>
 </head>
@@ -62,7 +63,7 @@
         Выход
       </button>
       <div class="sb-ver">
-        <span>v<span class="ns-version">1.0.0</span></span>
+        <span>v<span class="ns-version">1.0.1</span></span>
         <a href="https://github.com/Genocide12/neuro-shell/releases" target="_blank" rel="noopener">Релизы</a>
       </div>
     </div>
@@ -159,6 +160,25 @@
           <span class="field-hint">Подходит любой сервис формата /v1/chat/completions: ваш прокси, OpenRouter, OpenAI, локальная ollama и т.п.</span>
         </label>
 
+        <div id="corsHint" class="cors-hint hidden">
+          <div class="cors-hint-title">Браузер блокирует запросы к этому API (CORS)</div>
+          <p>Сервер не отвечает на preflight-запрос OPTIONS заголовком <code>Access-Control-Allow-Origin</code>, поэтому браузер не пускает запросы с вашим ключом. Сам ключ и сервер при этом могут быть полностью рабочими.</p>
+          <p><b>Быстрое решение:</b> скачайте настольную версию <b>NeuroShell.exe</b> — она открывает этот же интерфейс, но ходит в API напрямую через локальный прокси, без ограничений CORS. Ссылка — в README репозитория (Releases).</p>
+          <p><b>Если вы управляете сервером:</b> добавьте в nginx (в блок <code>server</code> или <code>location</code> прокси) ответ на preflight:</p>
+          <pre>location / {
+    if ($request_method = OPTIONS) {
+        add_header Access-Control-Allow-Origin $http_origin always;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type, anthropic-version, x-api-key" always;
+        add_header Access-Control-Max-Age 86400 always;
+        return 204;
+    }
+    # … остальной конфиг проксирования …
+}</pre>
+          <p>После правки nginx: <code>nginx -t && systemctl reload nginx</code>. Подробнее — README, раздел «CORS».</p>
+          <button type="button" class="btn-ghost" id="btnHideCorsHint">Понятно, скрыть</button>
+        </div>
+
         <label class="field">
           <span class="field-label">Модель</span>
           <div class="field-row">
@@ -247,7 +267,7 @@
     if (BRIDGE) return;
     BRIDGE = window.NeuroShellBridge = {
       desktop: true,
-      version: window.NS_APP_VERSION || '1.0.0',
+      version: window.NS_APP_VERSION || '1.0.1',
       exit: function(){ try { location.href = '/__ns/exit'; } catch(e){ window.close(); } }
     };
 
@@ -304,7 +324,7 @@
 'use strict';
 
 /* ================== КОНФИГ И ПРЕСЕТЫ ================== */
-const NS_VERSION = '1.0.0';
+const NS_VERSION = '1.0.1';
 const LS_PREFIX = 'neuroshell:';
 
 const PRESETS = {
@@ -1008,7 +1028,11 @@ async function runCompletion(chat, atts){
       box.removeChild(el);
     } else {
       setConn('err');
-      const em = { role: 'error', content: 'Ошибка запроса: ' + (err && err.message ? err.message : String(err)) + '\n\nПроверьте ключ, Base URL и модель в настройках. Код ошибки HTTP 401 обычно означает неверный ключ, 404 — неверный адрес или имя модели.' };
+      const isNetErr = klassifyFetchError(err) === 'network';
+      const corsNote = (isNetErr && !isExeMode())
+        ? '\n\nСкорее всего это CORS-ограничение браузера: сервер не проходит preflight-проверку (ответ OPTIONS без Access-Control-Allow-Origin). Ключ при этом может быть рабочим. Решения:\n1) Скачайте настольную NeuroShell.exe (ссылка в README) — она ходит в API напрямую, без CORS.\n2) Почините CORS на сервере: в nginx нужно, чтобы ответ на OPTIONS содержал заголовок Access-Control-Allow-Origin (инструкция в README, раздел «CORS»).'
+        : '\n\nПроверьте ключ, Base URL и модель в настройках. Код ошибки HTTP 401 обычно означает неверный ключ, 404 — неверный адрес или имя модели.';
+      const em = { role: 'error', content: 'Ошибка запроса: ' + (err && err.message ? err.message : String(err)) + corsNote };
       chat.messages[phIdx] = em;
       renderMessages(chat);
     }
@@ -1141,7 +1165,49 @@ async function loadModels(silent){
       if (!silent) toast('Найдено моделей: ' + list.length, 'ok');
     } else if (!silent) toast('Список моделей пуст', 'warn');
   } catch(e){
+    // fallback: в веб-версии CORS-preflight может резать запрос с Authorization.
+    // Простой GET без кастомных заголовков preflight не требует — список моделей
+    // /v1/models на большинстве прокси доступен и без ключа.
+    if (!isExeMode() && klassifyFetchError(e) === 'network'){
+      try {
+        const resp2 = await fetch(apiBase() + '/models');
+        if (resp2.ok){
+          const j2 = await resp2.json();
+          const list2 = (j2.data || []).map(x => x.id).filter(Boolean);
+          if (list2.length){
+            modelListCache = list2;
+            fillModelList(list2);
+            if (!silent) toast('Модели загружены (без ключа, из-за CORS веб-версии)', 'ok');
+            return;
+          }
+        }
+      } catch(e2){ /* останемся с диагностикой ниже */ }
+    }
     if (!silent) toast('Не удалось получить список моделей: ' + e.message, 'err');
+  }
+}
+
+// klassifyFetchError различает «нет сети», «CORS/preflight» и «сервер ответил».
+// TypeError из fetch в браузере возникает ДО отправки/получения ответа (сеть или CORS),
+// а ответ сервера (401/404/500) приходит как обычный resp.status — их не путаем.
+function klassifyFetchError(err){
+  const m = err && err.message ? String(err.message) : String(err);
+  // «Failed to fetch» (Firefox: NetworkError) — браузер не смог завершить запрос
+  if (/failed to fetch|networkerror|load failed|network error/i.test(m))
+    return 'network';
+  return 'unknown';
+}
+
+// corsAllowed проверяет CORS-дружелюбие сервера для веб-версии:
+// простой GET без кастомных заголовков не требует preflight, поэтому ответ сервера
+// виден как normally: 200/401/… → CORS на обычные запросы не мешает.
+// Если даже такой GET падает с TypeError — сервер недоступен или полностью блокирует origin.
+async function corsAllowed(base){
+  try {
+    await fetch(base + '/models', { mode: 'cors' }); // без Authorization — нет preflight
+    return true; // любой HTTP-статус означает: запрос прошёл, CORS обычный пропускает
+  } catch(e){
+    return false;
   }
 }
 
@@ -1150,9 +1216,11 @@ async function testKey(){
   const base = $('#setBase').value.trim() || DEFAULTS.baseUrl;
   const btn = $('#btnTestKey');
   btn.disabled = true; btn.textContent = '…';
+  let b = base.replace(/\/+$/, '');
+  if (!/\/v\d+$/.test(b) && !b.endsWith('/api')) b += '/v1';
   try {
-    let b = base.replace(/\/+$/, '');
-    if (!/\/v\d+$/.test(b) && !b.endsWith('/api')) b += '/v1';
+    // 1) сначала авторизованный запрос — в exe-режиме он идёт через локальный прокси (без CORS),
+    //    в вебе при «сыром» прокси без CORS-заголовков браузер ругнётся «Failed to fetch»
     const resp = await fetch(b + '/models', { headers: key ? { 'Authorization': 'Bearer ' + key } : {} });
     if (resp.status === 401 || resp.status === 403) throw new Error('HTTP ' + resp.status + ' — ключ отклонён');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -1164,8 +1232,26 @@ async function testKey(){
     toast('Соединение успешно' + (list.length ? ' · моделей: ' + list.length : '') + (!hasModel ? ' · выбранной модели нет в списке!' : ''), hasModel ? 'ok' : 'warn', 4200);
     setConn('ok');
   } catch(e){
+    // 2) диагностируем причину, чтобы не гадать «ключ» vs «сеть» vs «CORS»
+    let why = '';
+    let cls = klassifyFetchError(e);
+    if (cls === 'network' && !isExeMode()){
+      const plainOk = await corsAllowed(b);
+      if (plainOk){
+        // простой GET без ключа проходит, а с заголовком Authorization — нет:
+        // это классический CORS-preflight провал на стороне API-сервера
+        why = ' — сервер не проходит CORS-preflight (ответ OPTIONS без Access-Control-Allow-Origin). Ваш ключ и сервер в порядке: в чате это проявится как «Failed to fetch». Веб-версию браузер ограничивает, а настольная (NeuroShell.exe) ходит в API напрямую — скачайте её в README или почините CORS на сервере (см. подсказку ниже)';
+        setConn('err');
+        toast('Проверка не удалась' + why, 'err', 12000);
+        showCorsHint();
+        return;
+      }
+      why = ' — сервер недоступен (проверьте адрес и интернет)';
+    } else if (e && e.message) {
+      why = ' — ' + e.message;
+    }
     setConn('err');
-    toast('Проверка не удалась: ' + e.message, 'err', 4200);
+    toast('Проверка не удалась: ' + (cls === 'network' ? 'нет соединения с сервером' : (e && e.message ? e.message : String(e))) + why, 'err', 8000);
   } finally {
     btn.disabled = false; btn.textContent = 'Проверить';
   }
@@ -1196,6 +1282,15 @@ function applySettingsToUI(){
   $('#modelBadge').textContent = settings.model || '—';
   $('#modelBadge').title = 'Модель: ' + settings.model + '\nBase URL: ' + apiBase();
   setConn('');
+}
+
+// showCorsHint показывает развёрнутую подсказку в настройках, когда веб-версию
+// блокирует CORS API-сервера (префикс OPTIONS без Access-Control-Allow-Origin).
+// Вызывается из testKey() при соответствующей диагностике.
+function showCorsHint(){
+  const hint = $('#corsHint');
+  if (!hint) return;
+  hint.classList.remove('hidden');
 }
 
 function applyPresetToTextarea(){
@@ -1354,6 +1449,7 @@ function init(){
   });
   $('#btnTestKey').addEventListener('click', testKey);
   $('#btnReloadModels').addEventListener('click', () => loadModels(false));
+  $('#btnHideCorsHint').addEventListener('click', () => $('#corsHint').classList.add('hidden'));
   $('#setTemp').addEventListener('input', e => $('#tempVal').textContent = e.target.value);
   $('#setPreset').addEventListener('change', applyPresetToTextarea);
   $('#btnExportSettings').addEventListener('click', exportSettings);

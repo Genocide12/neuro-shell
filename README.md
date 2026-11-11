@@ -4,7 +4,7 @@
 
 Вставьте ключ — и работайте. Никакой телеметрии, никакой отправки данных на сторонние серверы (кроме вашего API), всё хранится локально в браузере.
 
-![NeuroShell](https://img.shields.io/badge/версия-1.0.0-6c8cff) ![тип](https://img.shields.io/badge/тип-один__HTML__файл-green) ![зависимости](https://img.shields.io/badge/зависимости-0-blue)
+![NeuroShell](https://img.shields.io/badge/версия-1.0.1-6c8cff) ![тип](https://img.shields.io/badge/тип-один__HTML__файл-green) ![зависимости](https://img.shields.io/badge/зависимости-0-blue)
 
 ## Что умеет
 
@@ -27,7 +27,7 @@
 1. Нажмите «Настройки» (внизу слева)
 2. Вставьте **API-ключ**
 3. Base URL и модель подставятся автоматически (`https://api.gym-rat.online/v1`, `claude-opus-5-5`) — можно поменять на любой другой сервис
-4. Нажмите «Проверить» — убедитесь, что соединение работает
+4. Нажмите «Проверить» — убедитесь, что соединение работает (если выпала ошибка `Failed to fetch` — см. раздел [«Если "Проверка не удалась" (CORS)»](#если-проверка-не-удалась-failed-to-fetch-cors))
 5. «Готово» — пишите!
 
 > Ключ хранится только в localStorage вашего браузера и уходит напрямую в API. Данные не проходят через какие-либо серверы NeuroShell — их и нет.
@@ -64,6 +64,35 @@
 - [OpenAI](https://api.openai.com/v1)
 - локальная [ollama](http://localhost:11434/v1) — бесплатно, на своей машине
 - self-hosted [LiteLLM](https://github.com/BerriAI/litellm) / [vLLM](https://github.com/vllm-project/vllm)
+
+## Если «Проверка не удалась: Failed to fetch» (CORS)
+
+Симптом: кнопка «Проверить» в веб-версии падает с `Failed to fetch`, хотя ключ рабочий (например, тот же ключ работает в Claude Code или в curl).
+
+Причина: браузер перед запросом с заголовком `Authorization` отправляет **preflight-запрос OPTIONS** и требует в ответе заголовок `Access-Control-Allow-Origin`. Часть прокси-сервисов (включая `api.gym-rat.online` на момент проверки) отвечает на OPTIONS кодом 204 **без этого заголовка** — браузер считает preflight проваленным и блокирует запрос целиком, ещё до его отправки. Сервер и ключ при этом полностью исправны: это ограничение безопасности браузера, а не неработающий API.
+
+Два решения:
+
+1. **Десктопная версия (без настройки сервера).** `NeuroShell.exe` открывает этот же интерфейс через локальный прокси (`127.0.0.1`) — запросы к API идут из обычного процесса, а не из браузерной страницы, поэтому CORS не применяется. Скачайте exe в [Releases](https://github.com/Genocide12/neuro-shell/releases), вставьте тот же ключ и работайте.
+
+2. **Починить CORS на сервере** (если он ваш). В nginx нужно, чтобы preflight получал правильные заголовки. В блок `server` (или `location`, где проксируется API) добавьте:
+
+   ```nginx
+   location / {
+       if ($request_method = OPTIONS) {
+           add_header Access-Control-Allow-Origin $http_origin always;
+           add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
+           add_header Access-Control-Allow-Headers "Authorization, Content-Type, X-Requested-With, x-api-key, X-API-Key, anthropic-version, anthropic-beta, accept, origin" always;
+           add_header Access-Control-Max-Age 86400 always;
+           return 204;
+       }
+       # … остальной конфиг проксирования …
+   }
+   ```
+
+   Затем `nginx -t && systemctl reload nginx`. После этого веб-версия заработает без изменений.
+
+> С версии 1.0.1 NeuroShell сам распознаёт эту ситуацию: «Проверить» сообщит, что ключ и сервер в порядке, а блокирует именно CORS, и покажет оба решения прямо в настройках.
 
 ## Как это устроено
 

@@ -345,6 +345,24 @@ a:hover{text-decoration:underline}
 @keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
 .toast.out{opacity:0;transform:translateX(20px);transition:all .25s}
 
+/* ---------- CORS-подсказка в настройках ---------- */
+.cors-hint{
+  margin:10px 0 4px;padding:14px 16px;border-radius:12px;font-size:12.5px;line-height:1.55;
+  background:rgba(255,180,84,.07);border:1px solid rgba(255,180,84,.35);color:var(--txt2);
+}
+.cors-hint-title{font-weight:700;color:var(--warn);font-size:13px;margin-bottom:8px}
+.cors-hint p{margin:7px 0;color:var(--txt2)}
+.cors-hint code{
+  font-family:var(--mono);font-size:11.5px;background:var(--bg3);
+  padding:1px 5px;border-radius:5px;color:var(--acc2);
+}
+.cors-hint pre{
+  font-family:var(--mono);font-size:11px;line-height:1.5;background:var(--bg2);
+  border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;
+  overflow-x:auto;white-space:pre;color:var(--txt2);
+}
+.cors-hint .btn-ghost{margin-top:6px}
+
 /* ---------- мобильная версия ---------- */
 @media (max-width:900px){
   #artifactPanel{position:fixed;inset:0;width:100%;min-width:0;z-index:40}
