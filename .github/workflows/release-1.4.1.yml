@@ -1,4 +1,4 @@
-name: Release NeuroShell 1.4.1
+name: Release NeuroShell 1.4.2
 
 on:
   workflow_dispatch:
@@ -11,35 +11,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-
       - name: Build site
         run: python3 scripts/build_site.py
-
       - name: Check JavaScript syntax
         run: for file in src/*.js; do node --check "$file"; done
-
       - name: Verify generated site copies
         run: cmp index.html internal/site/index.html
-
       - name: Test Go packages
         run: go test ./...
-
       - name: Build Windows executable
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H=windowsgui" -o NeuroShell.exe ./cmd/neuroshell
-
-      - name: Publish v1.4.1 release
+      - name: Publish v1.4.2 release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.4.1
-          name: NeuroShell 1.4.1
+          tag_name: v1.4.2
+          name: NeuroShell 1.4.2
           target_commitish: main
           files: NeuroShell.exe
           generate_release_notes: true
