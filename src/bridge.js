@@ -9,7 +9,7 @@
     if (BRIDGE) return;
     BRIDGE = window.NeuroShellBridge = {
       desktop: true,
-      version: window.NS_APP_VERSION || '1.0.1',
+      version: window.NS_APP_VERSION || '1.1.0',
       exit: function(){ try { location.href = '/__ns/exit'; } catch(e){ window.close(); } }
     };
 

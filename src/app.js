@@ -2,7 +2,7 @@
 'use strict';
 
 /* ================== КОНФИГ И ПРЕСЕТЫ ================== */
-const NS_VERSION = '1.0.1';
+const NS_VERSION = '1.1.0';
 const LS_PREFIX = 'neuroshell:';
 
 const PRESETS = {
@@ -136,6 +136,93 @@ let generating = false;
 let abortCtl = null;
 let modelListCache = [];
 
+/* ================== ЦЕНЫ НА ТОКЕНЫ ================== */
+// Встроенные тарифы — $ за 1 млн токенов (вход/выход): официальные цены
+// Anthropic на ноябрь 2026 и приближения для сторонних моделей.
+// Правила проверяются по подстроке, порядок — от частного к общему.
+const MODEL_PRICE_RULES = [
+  ['opus-5-5', 4, 20],    ['opus-5.5', 4, 20],    // Opus 5.5
+  ['opus-5', 5, 25],                              // Opus 5
+  ['opus-4-8', 5, 25],    ['opus-4-7', 5, 25],    // Opus 4.5–4.8
+  ['opus-4-6', 5, 25],    ['opus-4-5', 5, 25],
+  ['opus-4-1', 15, 75],   ['opus-4-2025', 15, 75], ['4-opus', 15, 75], // Opus 4 / 4.1
+  ['opus-4', 15, 75],
+  ['opus-3', 15, 75],     ['3-opus', 15, 75],     // Claude 3 Opus
+  ['sonnet-5-5', 2, 10],  ['sonnet-5.5', 2, 10],  // Sonnet 5.5
+  ['sonnet-5', 2, 10],                            // Sonnet 5
+  ['sonnet-4-6', 3, 15],  ['sonnet-4-5', 3, 15],  // Sonnet 4.x
+  ['sonnet-4', 3, 15],    ['3-7-sonnet', 3, 15],  ['3-5-sonnet', 3, 15], ['sonnet-3', 3, 15],
+  ['haiku-5-5', 0.10, 0.50], ['haiku-5.5', 0.10, 0.50], // Haiku 5.5
+  ['haiku-4-5', 1, 5],                            // Haiku 4.5
+  ['3-5-haiku', 0.80, 4],
+  ['haiku-3', 0.25, 1.25], ['3-haiku', 0.25, 1.25], // Claude 3 Haiku
+  ['fable', 10, 50],                              // Fable
+  ['gpt-4o-mini', 0.15, 0.60],
+  ['gpt-4o', 2.50, 10],
+  ['deepseek', 0.28, 0.42],                       // DeepSeek, приблизительно
+  ['qwen-max', 1.60, 6.40]                        // Qwen Max, приблизительно
+];
+
+let serverPrices = {};                        // цены из /v1/models, если сервер их отдаёт
+let priceOverrides = store.get('prices', {}); // цены, заданные вручную (localStorage)
+
+const PRICE_SRC_LABEL = { server: 'сервер', builtin: 'встроено', manual: 'вручную' };
+
+// priceFor — тариф модели {in, out, src} или null. Приоритет: вручную > сервер > встроенные.
+function priceFor(id){
+  if (!id) return null;
+  const o = priceOverrides[id];
+  if (o && typeof o.in === 'number') return { in: o.in, out: o.out, src: 'manual' };
+  const s = serverPrices[id];
+  if (s && s.in > 0) return { in: s.in, out: s.out, src: 'server' };
+  const q = String(id).toLowerCase();
+  for (const r of MODEL_PRICE_RULES){
+    if (q.indexOf(r[0]) >= 0) return { in: r[1], out: r[2], src: 'builtin' };
+  }
+  return null;
+}
+
+// costOf — стоимость запроса по тарифу модели: (вх×цена вх + вых×цена вых) / 1M
+function costOf(modelId, tokIn, tokOut){
+  const p = priceFor(modelId);
+  if (!p) return null;
+  return (tokIn || 0) * p.in / 1e6 + (tokOut || 0) * p.out / 1e6;
+}
+
+function fmtUSD(x){
+  if (x == null || isNaN(x)) return '—';
+  if (x === 0) return '$0';
+  if (x < 0.01) return '$' + x.toFixed(4);
+  if (x < 1) return '$' + x.toFixed(3);
+  return '$' + x.toFixed(2);
+}
+const fmtTok = n => (n || 0).toLocaleString('ru-RU');
+
+// chatSubText — подпись чата: сообщения, накопленная стоимость, дата
+function chatSubText(c){
+  let s = c && c.messages && c.messages.length ? c.messages.length + ' сообщ. · ' : '';
+  if (c && c.cost != null && c.cost > 0) s += '≈' + fmtUSD(c.cost) + ' · ';
+  return s + fmtDate(c.updated);
+}
+
+// parseServerPricing читает цены из /v1/models (формат OpenRouter и похожих).
+// Значение меньше 0.001 — цена за один токен: переводим в $/1M.
+function parseServerPricing(j){
+  serverPrices = {};
+  const arr = (j && j.data) || [];
+  for (const x of arr){
+    if (!x || !x.id) continue;
+    const pr = x.pricing || {};
+    let pin = parseFloat(pr.prompt != null ? pr.prompt : (pr.input != null ? pr.input : x.input_price));
+    let pout = parseFloat(pr.completion != null ? pr.completion : (pr.output != null ? pr.output : x.output_price));
+    if (isNaN(pin)) pin = 0;
+    if (isNaN(pout)) pout = 0;
+    if (pin > 0 && pin < 0.001) pin *= 1e6;
+    if (pout > 0 && pout < 0.001) pout *= 1e6;
+    if (pin > 0 || pout > 0) serverPrices[x.id] = { in: pin, out: pout };
+  }
+}
+
 /* ================== КОНФИГУРАЦИЯ API ================== */
 function apiBase(){
   let b = (settings.baseUrl || '').trim();
@@ -249,6 +336,18 @@ function msgEl(m, idx){
       }
       body.appendChild(btnRow);
     }
+  }
+
+  // расход токенов и стоимость ответа
+  if (m.role === 'assistant' && m.usage){
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    meta.textContent =
+      (m.usage.est ? '~' : '') + fmtTok(m.usage.in) + ' вх · ' +
+      (m.usage.est ? '~' : '') + fmtTok(m.usage.out) + ' вых' +
+      (m.cost != null ? ' · ≈' + fmtUSD(m.cost) : '');
+    meta.title = 'Токены и стоимость ответа по тарифу модели ' + (settings.model || '');
+    bubble.appendChild(meta);
   }
 
   wrap.appendChild(av);
@@ -508,8 +607,7 @@ function openChat(id){
   if (!c) return;
   renderMessages(c);
   $('#chatTitle').textContent = c.title || 'Без названия';
-  const lastMsg = c.messages[c.messages.length - 1];
-  $('#chatSub').textContent = (c.messages.length ? c.messages.length + ' сообщ. · ' : '') + fmtDate(c.updated);
+  $('#chatSub').textContent = chatSubText(c);
   renderChatList($('#searchInput').value);
   scrollBottom();
   if (window.innerWidth <= 760) toggleSidebar(false);
@@ -586,6 +684,25 @@ function regenerate(idx){
   runCompletion(chat, []);
 }
 
+// requestChat выполняет запрос к /chat/completions; если строгий прокси не принял
+// stream_options (поле с фактическим расходом токенов), повторяет без него.
+async function requestChat(url, fetchOpts, body){
+  let resp = await fetch(url, fetchOpts);
+  if (!resp.ok){
+    let errText = await resp.text().catch(() => '');
+    if (body.stream && body.stream_options && /stream_options/i.test(errText)){
+      const b2 = Object.assign({}, body);
+      delete b2.stream_options;
+      const o2 = Object.assign({}, fetchOpts, { body: JSON.stringify(b2) });
+      resp = await fetch(url, o2);
+      if (resp.ok) return resp;
+      errText = await resp.text().catch(() => '');
+    }
+    throw new Error('HTTP ' + resp.status + (errText ? ' — ' + errText.slice(0, 500) : ''));
+  }
+  return resp;
+}
+
 async function runCompletion(chat, atts){
   generating = true;
   setBusy(true);
@@ -637,6 +754,9 @@ async function runCompletion(chat, atts){
       temperature: Number(settings.temp),
       stream: !!settings.stream
     };
+    // просим сервер прислать фактический расход токенов прямо в стриме
+    // (нестрогие прокси поле просто игнорируют)
+    if (settings.stream) body.stream_options = { include_usage: true };
 
     const url = apiBase() + '/chat/completions';
     const fetchOpts = { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) };
@@ -644,12 +764,10 @@ async function runCompletion(chat, atts){
     // в exe-режиме window.fetch перехвачен мостом NeuroShellBridge (см. обёртку):
     // запросы к API уходят через локальный прокси, поэтому CORS не важен
 
+    let usage = null; // фактический расход токенов, если сервер его присылает
+
     if (settings.stream){
-      const resp = await fetch(url, fetchOpts);
-      if (!resp.ok){
-        const errText = await resp.text().catch(() => '');
-        throw new Error('HTTP ' + resp.status + (errText ? ' — ' + errText.slice(0, 500) : ''));
-      }
+      const resp = await requestChat(url, fetchOpts, body);
       setConn('ok');
       const reader = resp.body.getReader();
       const dec = new TextDecoder();
@@ -668,6 +786,7 @@ async function runCompletion(chat, atts){
           if (data === '[DONE]') continue;
           try {
             const j = JSON.parse(data);
+            if (j.usage) usage = j.usage; // расход приходит в последнем чанке
             const d = j.choices && j.choices[0] && j.choices[0].delta;
             if (d && d.content) full += d.content;
           } catch(e){}
@@ -681,18 +800,36 @@ async function runCompletion(chat, atts){
         }
       }
     } else {
-      const resp = await fetch(url, fetchOpts);
-      if (!resp.ok){
-        const errText = await resp.text().catch(() => '');
-        throw new Error('HTTP ' + resp.status + (errText ? ' — ' + errText.slice(0, 500) : ''));
-      }
+      const resp = await requestChat(url, fetchOpts, body);
       setConn('ok');
       const j = await resp.json();
+      if (j.usage) usage = j.usage;
       full = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
       ph.content = full;
     }
 
     ph.content = full || '(пустой ответ)';
+
+    // расход токенов: фактический (usage) или оценка ~3.6 симв/ток; стоимость — по тарифу
+    let uIn = null, uOut = null;
+    if (usage){
+      uIn = usage.prompt_tokens != null ? usage.prompt_tokens : usage.input_tokens;
+      uOut = usage.completion_tokens != null ? usage.completion_tokens : usage.output_tokens;
+    }
+    let est = false;
+    if (uIn == null || uOut == null){
+      est = true;
+      let all = settings.system || '';
+      for (const m of chat.messages) if (m.role !== 'error') all += '\n' + (m.content || '');
+      if (uIn == null) uIn = estTokens(all);
+      if (uOut == null) uOut = estTokens(full);
+    }
+    ph.usage = { in: uIn, out: uOut, est: est };
+    ph.cost = costOf(settings.model, uIn, uOut);
+    if (ph.cost != null) chat.cost = (chat.cost || 0) + ph.cost;
+    chat.tokIn = (chat.tokIn || 0) + uIn;
+    chat.tokOut = (chat.tokOut || 0) + uOut;
+
     // пересобираем элемент: появляются кнопки «копировать» и «артефакт»
     try { box.replaceChild(msgEl(ph, phIdx), el); } catch(e){ bubble.innerHTML = renderMarkdown(ph.content); }
   } catch(err){
@@ -721,8 +858,8 @@ async function runCompletion(chat, atts){
     chat.updated = now();
     persist();
     renderChatList($('#searchInput').value);
-    const c = currentChat();
-    $('#chatSub').textContent = (c && c.messages.length ? c.messages.length + ' сообщ. · ' : '') + fmtDate(chat.updated);
+    const c = currentChat() || chat;
+    $('#chatSub').textContent = chatSubText(c);
     if (nearBottom()) scrollBottom();
   }
 }
@@ -797,8 +934,19 @@ function renderAtts(){
   });
 }
 
+// estPromptTokens — оценка всего промпта: системные инструкции + история + ввод
+function estPromptTokens(){
+  let s = settings.system || '';
+  const c = currentChat();
+  if (c) for (const m of c.messages){ if (m.role !== 'error') s += '\n' + (m.content || ''); }
+  return estTokens(s) + estTokens($('#input').value);
+}
+
 function updateStat(){
-  $('#stat').textContent = '~' + estTokens($('#input').value) + ' ток.';
+  const t = estPromptTokens();
+  const cost = costOf(settings.model, t, 0);
+  $('#stat').textContent = '~' + fmtTok(t) + ' ток.' + (cost != null ? ' · ≈' + fmtUSD(cost) : '');
+  $('#stat').title = 'Оценка промпта (инструкции + история + ввод)' + (cost != null ? ' и стоимость его отправки по тарифу модели' : '');
 }
 
 function autoGrow(t){
@@ -817,6 +965,7 @@ function openSettings(){
   $('#tempVal').textContent = settings.temp;
   $('#setStream').checked = !!settings.stream;
   fillModelList();
+  updateModelPriceHint();
   $('#settingsModal').classList.remove('hidden');
   if (!$('#setKey').value) setTimeout(() => $('#setKey').focus(), 60);
 }
@@ -836,10 +985,12 @@ async function loadModels(silent){
     const resp = await fetch(url, { headers: apiHeaders() });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const j = await resp.json();
+    parseServerPricing(j);
     const list = (j.data || []).map(x => x.id).filter(Boolean);
     if (list.length){
       modelListCache = list;
       fillModelList(list);
+      refreshPriceUI();
       if (!silent) toast('Найдено моделей: ' + list.length, 'ok');
     } else if (!silent) toast('Список моделей пуст', 'warn');
   } catch(e){
@@ -851,10 +1002,12 @@ async function loadModels(silent){
         const resp2 = await fetch(apiBase() + '/models');
         if (resp2.ok){
           const j2 = await resp2.json();
+          parseServerPricing(j2);
           const list2 = (j2.data || []).map(x => x.id).filter(Boolean);
           if (list2.length){
             modelListCache = list2;
             fillModelList(list2);
+            refreshPriceUI();
             if (!silent) toast('Модели загружены (без ключа, из-за CORS веб-версии)', 'ok');
             return;
           }
@@ -903,9 +1056,11 @@ async function testKey(){
     if (resp.status === 401 || resp.status === 403) throw new Error('HTTP ' + resp.status + ' — ключ отклонён');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const j = await resp.json().catch(() => null);
+    if (j) parseServerPricing(j);
     const list = j && j.data ? j.data.map(x => x.id).filter(Boolean) : [];
     modelListCache = list;
     fillModelList(list);
+    refreshPriceUI();
     const hasModel = !$('#setModel').value.trim() || list.length === 0 || list.includes($('#setModel').value.trim());
     toast('Соединение успешно' + (list.length ? ' · моделей: ' + list.length : '') + (!hasModel ? ' · выбранной модели нет в списке!' : ''), hasModel ? 'ok' : 'warn', 4200);
     setConn('ok');
@@ -958,8 +1113,12 @@ function saveSettings(){
 
 function applySettingsToUI(){
   $('#modelBadge').textContent = settings.model || '—';
-  $('#modelBadge').title = 'Модель: ' + settings.model + '\nBase URL: ' + apiBase();
+  const p = priceFor(settings.model);
+  $('#modelBadge').title = 'Модель: ' + settings.model +
+    (p ? '\nТариф: ' + fmtUSD(p.in) + ' вход · ' + fmtUSD(p.out) + ' выход за 1M токенов (' + PRICE_SRC_LABEL[p.src] + ')' : '\nТариф не известен — задайте в таблице цен') +
+    '\nBase URL: ' + apiBase() + '\nКлик — таблица цен';
   setConn('');
+  updateModelPriceHint();
 }
 
 // showCorsHint показывает развёрнутую подсказку в настройках, когда веб-версию
@@ -974,6 +1133,147 @@ function showCorsHint(){
 function applyPresetToTextarea(){
   const p = PRESETS[$('#setPreset').value];
   if (p) $('#setSystem').value = p.system;
+}
+
+/* ================== ЦЕНЫ: ТАБЛИЦА И ПОДСКАЗКИ ================== */
+
+// updateModelPriceHint — тариф выбранной модели прямо в настройках
+function updateModelPriceHint(){
+  const el = $('#modelPriceHint');
+  if (!el) return;
+  const id = $('#setModel').value.trim();
+  if (!id){ el.textContent = ''; return; }
+  const p = priceFor(id);
+  if (p){
+    el.innerHTML = 'Тариф: <b>' + fmtUSD(p.in) + '</b> вход · <b>' + fmtUSD(p.out) +
+      '</b> выход за 1M токенов — ' + esc(PRICE_SRC_LABEL[p.src]) +
+      (p.src === 'manual' ? '' : '. Если ваш прокси считает иначе — поправьте в таблице цен.');
+  } else {
+    el.textContent = 'Тариф не известен — задайте вручную в таблице «Цены на токены».';
+  }
+}
+
+// refreshPriceUI — обновить всё, что показывает цены
+function refreshPriceUI(){
+  applySettingsToUI();
+  updateStat();
+  const pm = $('#priceModal');
+  if (pm && !pm.classList.contains('hidden')) renderPrices();
+}
+
+function openPrices(){
+  renderPrices();
+  $('#priceModal').classList.remove('hidden');
+  const f = $('#priceFilter');
+  f.value = '';
+  setTimeout(() => f.focus(), 60);
+}
+
+function renderPrices(){
+  const tb = $('#priceBody');
+  if (!tb) return;
+  const f = ($('#priceFilter').value || '').trim().toLowerCase();
+  const ids = new Set(modelListCache || []);
+  for (const m of SUGGESTED_MODELS) ids.add(m);
+  for (const k of Object.keys(priceOverrides)) ids.add(k);
+  for (const k of Object.keys(serverPrices)) ids.add(k);
+  if (settings.model) ids.add(settings.model);
+  let list = Array.from(ids);
+  if (f) list = list.filter(m => m.toLowerCase().includes(f));
+  list.sort((a, b) => (b === settings.model) - (a === settings.model) || a.localeCompare(b));
+  tb.innerHTML = '';
+  if (!list.length){
+    tb.innerHTML = '<tr><td colspan="5" class="price-empty">Ничего не найдено</td></tr>';
+    return;
+  }
+  for (const id of list) tb.appendChild(priceRow(id));
+}
+
+function priceRow(id){
+  const p = priceFor(id);
+  const tr = document.createElement('tr');
+  if (id === settings.model) tr.className = 'price-cur';
+
+  const tdM = document.createElement('td');
+  tdM.className = 'price-model';
+  tdM.textContent = id;
+  tdM.title = id;
+  if (id === settings.model){
+    const mk = document.createElement('span');
+    mk.className = 'price-mark';
+    mk.textContent = ' · текущая';
+    tdM.appendChild(mk);
+  }
+  tr.appendChild(tdM);
+
+  for (const kind of ['in', 'out']){
+    const td = document.createElement('td');
+    td.className = 'price-cell';
+    td.textContent = p ? fmtUSD(p[kind]) : '—';
+    td.title = 'Нажмите, чтобы изменить цену';
+    td.addEventListener('click', () => editPrice(id, kind, td));
+    tr.appendChild(td);
+  }
+
+  const tdS = document.createElement('td');
+  tdS.className = 'price-src';
+  tdS.textContent = p ? PRICE_SRC_LABEL[p.src] : 'нет';
+  tr.appendChild(tdS);
+
+  const tdX = document.createElement('td');
+  if (priceOverrides[id]){
+    const btn = document.createElement('button');
+    btn.className = 'price-reset';
+    btn.textContent = 'сброс';
+    btn.title = 'Вернуть цену по умолчанию';
+    btn.addEventListener('click', () => {
+      delete priceOverrides[id];
+      store.set('prices', priceOverrides);
+      refreshPriceUI();
+      toast('Цена сброшена', 'ok', 1600);
+    });
+    tdX.appendChild(btn);
+  }
+  tr.appendChild(tdX);
+  return tr;
+}
+
+// editPrice — редактирование цены кликом по ячейке (сохраняется в localStorage)
+function editPrice(id, kind, td){
+  if (td.querySelector('input')) return;
+  const cur = priceFor(id);
+  td.innerHTML = '';
+  const inp = document.createElement('input');
+  inp.type = 'number';
+  inp.step = 'any';
+  inp.min = '0';
+  inp.value = cur ? String(cur[kind]) : '';
+  inp.className = 'price-input';
+  td.appendChild(inp);
+  inp.focus();
+  inp.select();
+  let closed = false;
+  const done = save => {
+    if (closed) return;
+    closed = true;
+    if (save){
+      const v = parseFloat(String(inp.value).replace(',', '.'));
+      if (!isNaN(v) && v >= 0){
+        const base = priceFor(id);
+        priceOverrides[id] = { in: base ? base.in : 0, out: base ? base.out : 0 };
+        priceOverrides[id][kind] = v;
+        store.set('prices', priceOverrides);
+        toast('Цена «' + id + '» сохранена', 'ok', 1600);
+      }
+    }
+    refreshPriceUI();
+  };
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter'){ e.preventDefault(); done(true); }
+    else if (e.key === 'Escape'){ e.preventDefault(); done(false); }
+    e.stopPropagation();
+  });
+  inp.addEventListener('blur', () => done(true));
 }
 
 /* ================== ЭКСПОРТ / ИМПОРТ ================== */
@@ -1128,6 +1428,12 @@ function init(){
   $('#btnTestKey').addEventListener('click', testKey);
   $('#btnReloadModels').addEventListener('click', () => loadModels(false));
   $('#btnHideCorsHint').addEventListener('click', () => $('#corsHint').classList.add('hidden'));
+  $('#btnPrices').addEventListener('click', openPrices);
+  $('#btnClosePrices').addEventListener('click', () => $('#priceModal').classList.add('hidden'));
+  $('#priceModal').addEventListener('click', e => { if (e.target === e.currentTarget) $('#priceModal').classList.add('hidden'); });
+  $('#priceFilter').addEventListener('input', renderPrices);
+  $('#modelBadge').addEventListener('click', openPrices);
+  $('#setModel').addEventListener('input', updateModelPriceHint);
   $('#setTemp').addEventListener('input', e => $('#tempVal').textContent = e.target.value);
   $('#setPreset').addEventListener('change', applyPresetToTextarea);
   $('#btnExportSettings').addEventListener('click', exportSettings);
@@ -1150,6 +1456,7 @@ function init(){
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape'){
       if (!$('#settingsModal').classList.contains('hidden')) closeSettings();
+      else if (!$('#priceModal').classList.contains('hidden')) $('#priceModal').classList.add('hidden');
       else if (!$('#confirmModal').classList.contains('hidden')) $('#confirmModal').classList.add('hidden');
       else if (!$('#artifactPanel').classList.contains('hidden')) $('#artifactPanel').classList.add('hidden');
     }

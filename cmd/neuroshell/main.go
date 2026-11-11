@@ -1,6 +1,8 @@
 // ===== NeuroShell :: десктопная обёртка (Go) =====
 // Локальный сервер отдаёт index.html и проксирует запросы к любым API,
 // поэтому CORS не важен. Ключ хранится на машине пользователя.
+// Приложение открывается в отдельном собственном окне (Edge/Chrome
+// в режиме --app: без вкладок, адресной строки и панелей браузера).
 package main
 
 import (
@@ -12,7 +14,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -20,12 +24,16 @@ import (
 	"neuroshell/internal/site"
 )
 
-var version = "1.0.1"
+var version = "1.1.0"
+
+// Фиксированный порт: адрес приложения не меняется между запусками, поэтому
+// настройки и история чатов (localStorage браузерного профиля) сохраняются.
+const defaultPort = 8947
 
 func main() {
 	mux := http.NewServeMux()
 
-	// мост: сердцебиение — сервер живёт, пока открыта вкладка приложения
+	// мост: сердцебиение — сервер живёт, пока открыто окно приложения
 	var lastBeat int64 // 0 до первого пинга
 	mux.HandleFunc("/__ns/ping", func(w http.ResponseWriter, r *http.Request) {
 		atomic.StoreInt64(&lastBeat, time.Now().Unix())
@@ -37,7 +45,7 @@ func main() {
 		w.Write([]byte("bye"))
 		go func() {
 			time.Sleep(300 * time.Millisecond)
-			fmt.Println("\n[NeuroShell] вкладка закрыта — выходим.")
+			fmt.Println("\n[NeuroShell] окно закрыто — выходим.")
 			os.Exit(0)
 		}()
 	})
@@ -52,12 +60,10 @@ func main() {
 		w.Write(site.IndexHTML())
 	})
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, url, err := listenURL()
 	if err != nil {
 		log.Fatal("listen:", err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
 
 	server := &http.Server{
 		Handler:           mux,
@@ -71,28 +77,74 @@ func main() {
 	}()
 
 	fmt.Printf("NeuroShell %s — сервер запущен: %s\n", version, url)
-	if err := openBrowser(url); err != nil {
-		fmt.Println("Не удалось открыть браузер автоматически. Откройте вручную:", url)
+	if openAppWindow(url) {
+		fmt.Println("Приложение открыто в отдельном окне.")
+	} else if err := openBrowser(url); err != nil {
+		// крайний случай: нет ни Edge/Chrome, ни браузера по умолчанию
+		notifyManual(url)
 	}
-	fmt.Println("Работает. Закройте вкладку приложения (или это окно) для выхода.")
-	// до первого пинга ждём до 10 минут (пользователь открывает вкладку),
-	// дальше живём, пока идут сердцебиения; пропали — вкладку закрыли
+	fmt.Println("Работает. Закройте окно приложения (или это окно) для выхода.")
+	// до первого пинга ждём до 10 минут (пользователь открывает окно),
+	// дальше живём, пока идут сердцебиения; пропали — окно закрыли
 	firstDeadline := time.Now().Add(10 * time.Minute)
 	for {
 		time.Sleep(2 * time.Second)
 		last := atomic.LoadInt64(&lastBeat)
 		if last == 0 {
 			if time.Now().After(firstDeadline) {
-				fmt.Println("\n[NeuroShell] вкладка так и не открылась — выходим.")
+				fmt.Println("\n[NeuroShell] окно так и не открылось — выходим.")
 				return
 			}
 			continue
 		}
 		if time.Now().Unix()-last > 25 {
-			fmt.Println("\n[NeuroShell] вкладка закрыта — выходим.")
+			fmt.Println("\n[NeuroShell] окно закрыто — выходим.")
 			return
 		}
 	}
+}
+
+// listenURL слушает фиксированный порт (по умолчанию 8947, меняется
+// переменной окружения NS_PORT). Если порт занят уже запущенной копией
+// NeuroShell — открывает окно работающего экземпляра и завершается.
+// Если порт занят чужим сервисом — берёт случайный порт.
+func listenURL() (net.Listener, string, error) {
+	port := os.Getenv("NS_PORT")
+	if port == "" {
+		port = strconv.Itoa(defaultPort)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:"+port)
+	if err == nil {
+		return listener, "http://127.0.0.1:" + port + "/", nil
+	}
+
+	if isNeuroShell("127.0.0.1:" + port) {
+		url := "http://127.0.0.1:" + port + "/"
+		fmt.Println("NeuroShell уже запущена — открываю окно:", url)
+		if !openAppWindow(url) {
+			_ = openBrowser(url)
+		}
+		os.Exit(0)
+	}
+
+	listener, err = net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, "", err
+	}
+	p := listener.Addr().(*net.TCPAddr).Port
+	return listener, fmt.Sprintf("http://127.0.0.1:%d/", p), nil
+}
+
+// isNeuroShell проверяет по /__ns/ping, что по адресу отвечает наша копия.
+func isNeuroShell(addr string) bool {
+	c := &http.Client{Timeout: 2 * time.Second}
+	resp, err := c.Get("http://" + addr + "/__ns/ping")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
+	return strings.TrimSpace(string(b)) == "pong"
 }
 
 // nsProxy — универсальный прокси для API-запросов (обход CORS и смешанных схем).
@@ -122,7 +174,7 @@ func nsProxy(w http.ResponseWriter, r *http.Request) {
 	if xi := r.Header.Get("X-NS-X-Api-Key"); xi != "" {
 		req.Header.Set("x-api-key", xi)
 	}
-	// браузерный UA: часть прокси-сервисов фильтрует не-браузерные клиенты
+	// браузерный UA: часть прокси-сервисов фильтрует не-браузерных клиентов
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 NeuroShell/"+version)
 
 	client := &http.Client{Timeout: 10 * time.Minute}
@@ -144,7 +196,68 @@ func nsProxy(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-// openBrowser открывает URL в браузере по умолчанию.
+// openAppWindow открывает приложение в отдельном окне: Chromium-браузеры
+// (Edge есть почти на каждом Windows) поддерживают режим --app — окно без
+// вкладок и адресной строки, выглядит как самостоятельное приложение.
+// Возвращает true, если окно запустить удалось.
+func openAppWindow(url string) bool {
+	for _, cmd := range appWindowCommands(url) {
+		if err := cmd.Start(); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func appWindowCommands(url string) []*exec.Cmd {
+	var cmds []*exec.Cmd
+	add := func(exe string, args ...string) {
+		if exe != "" {
+			cmds = append(cmds, exec.Command(exe, args...))
+		}
+	}
+	args := []string{"--app=" + url, "--window-size=1240,860", "--no-first-run", "--no-default-browser-check"}
+	switch runtime.GOOS {
+	case "windows":
+		for _, exe := range chromiumPaths() {
+			add(exe, args...)
+		}
+	case "darwin":
+		add("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", args...)
+	default: // linux и прочее
+		for _, exe := range []string{"chromium", "google-chrome", "chromium-browser"} {
+			add(exe, args...)
+		}
+	}
+	return cmds
+}
+
+// chromiumPaths — существующие на этой машине пути к Edge и Chrome (Windows).
+func chromiumPaths() []string {
+	candidates := []string{}
+	if la, err := os.UserCacheDir(); err == nil {
+		// установки «для текущего пользователя»
+		candidates = append(candidates,
+			filepath.Join(la, `Microsoft\Edge\Application\msedge.exe`),
+			filepath.Join(la, `Google\Chrome\Application\chrome.exe`),
+		)
+	}
+	candidates = append(candidates,
+		`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`,
+		`C:\Program Files\Microsoft\Edge\Application\msedge.exe`,
+		`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+		`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+	)
+	var out []string
+	for _, p := range candidates {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// openBrowser открывает URL в браузере по умолчанию (запасной вариант).
 func openBrowser(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -156,4 +269,14 @@ func openBrowser(url string) error {
 		cmd = exec.Command("xdg-open", url)
 	}
 	return cmd.Start()
+}
+
+// notifyManual сообщает адрес вручную, если окно открыть не удалось.
+func notifyManual(url string) {
+	msg := "Не удалось открыть окно автоматически.\nОткройте в браузере адрес:\n" + url
+	if runtime.GOOS == "windows" {
+		messageBox(msg, "NeuroShell")
+	} else {
+		fmt.Println(msg)
+	}
 }
