@@ -9,9 +9,9 @@
   const send = document.getElementById('btnSend');
   const stop = document.getElementById('btnStop');
   const actions = document.querySelector('.composer-actions');
-  if (!input || !send || !actions || typeof window.sendMessage !== 'function') return;
-
   const originalSend = window.sendMessage;
+  if (!input || !send || !actions || typeof originalSend !== 'function') return;
+
   const queue = [];
   let draining = false;
   const badge = document.createElement('span');
@@ -21,27 +21,23 @@
 
   function updateBadge() {
     badge.textContent = queue.length ? 'В очереди: ' + queue.length : '';
-    badge.classList.toggle('hidden', !queue.length);
+    badge.classList.toggle('hidden', queue.length === 0);
   }
 
-  async function submitQueued() {
-    if (draining || !queue.length) return;
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const isGenerating = () => stop && !stop.classList.contains('hidden');
+
+  async function drain() {
+    if (draining) return;
     draining = true;
     try {
       while (queue.length) {
-        // Wait until the app's current request and tool rounds have finished.
-        while (stop && !stop.classList.contains('hidden')) {
-          await new Promise(resolve => setTimeout(resolve, 250));
-        }
-        if (!queue.length) break;
-        const item = queue.shift();
-        input.value = item;
+        while (isGenerating()) await wait(150);
+        const text = queue.shift();
+        input.value = text;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         updateBadge();
         await originalSend();
-        while (stop && !stop.classList.contains('hidden')) {
-          await new Promise(resolve => setTimeout(resolve, 250));
-        }
       }
     } finally {
       draining = false;
@@ -50,7 +46,7 @@
   }
 
   window.sendMessage = async function queuedSendMessage() {
-    if (stop && !stop.classList.contains('hidden')) {
+    if (isGenerating() || draining) {
       const text = input.value.trim();
       if (!text) return;
       queue.push(text);
@@ -62,10 +58,9 @@
     return originalSend.apply(this, arguments);
   };
 
-  const observer = new MutationObserver(() => {
-    if (queue.length && !stop.classList.contains('hidden')) return;
-    if (queue.length) submitQueued();
-  });
-  if (stop) observer.observe(stop, { attributes: true, attributeFilter: ['class'] });
-  updateBadge();
+  if (stop) {
+    new MutationObserver(() => {
+      if (!isGenerating() && queue.length) drain();
+    }).observe(stop, { attributes: true, attributeFilter: ['class'] });
+  }
 })();
