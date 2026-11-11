@@ -24,14 +24,8 @@
   };
   button.addEventListener('click', () => scrollBottom());
   main.appendChild(button);
-  scroll.addEventListener('scroll', () => {
-    pinnedToBottom = isAtBottom();
-    updateButton();
-  }, { passive: true });
-  const observer = new MutationObserver(() => {
-    if (pinnedToBottom) requestAnimationFrame(() => scrollBottom('auto'));
-    else updateButton();
-  });
+  scroll.addEventListener('scroll', () => { pinnedToBottom = isAtBottom(); updateButton(); }, { passive: true });
+  const observer = new MutationObserver(() => pinnedToBottom ? requestAnimationFrame(() => scrollBottom('auto')) : updateButton());
   observer.observe(messages, { childList: true, subtree: true, characterData: true });
   window.addEventListener('resize', () => pinnedToBottom ? scrollBottom('auto') : updateButton());
 
@@ -41,44 +35,24 @@
   if (!input || !actions || !Recognition || document.getElementById('btnVoice')) return;
 
   const mic = document.createElement('button');
-  mic.type = 'button';
-  mic.id = 'btnVoice';
-  mic.className = 'icon-btn voice-btn';
-  mic.textContent = '🎙️';
-  mic.title = 'Начать голосовой ввод';
-  mic.setAttribute('aria-label', mic.title);
+  mic.type = 'button'; mic.id = 'btnVoice'; mic.className = 'icon-btn voice-btn'; mic.textContent = '🎙️';
+  mic.title = 'Начать голосовой ввод'; mic.setAttribute('aria-label', mic.title);
   actions.insertBefore(mic, document.getElementById('stat'));
-
   const recognition = new Recognition();
-  recognition.lang = 'ru-RU';
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  let listening = false;
-  let restarting = false;
-  let baseText = '';
-  let committedText = '';
-  let previousFinals = [];
-  let restartTimer = 0;
-
+  recognition.lang = 'ru-RU'; recognition.continuous = true; recognition.interimResults = true;
+  let listening = false, restarting = false, baseText = '', committedText = '', previousFinals = [], restartTimer = 0;
   const normalize = text => String(text || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ru-RU');
-  const renderTranscript = event => {
-    const finals = [];
-    let interim = '';
+  recognition.onstart = () => { restarting = false; mic.classList.add('active'); mic.title = 'Нажмите, чтобы выключить микрофон'; mic.setAttribute('aria-label', mic.title); };
+  recognition.onresult = event => {
+    const finals = []; let interim = '';
     for (let i = 0; i < event.results.length; i++) {
-      const result = event.results[i];
-      const text = result[0] && result[0].transcript ? result[0].transcript.trim() : '';
+      const result = event.results[i], text = result[0] && result[0].transcript ? result[0].transcript.trim() : '';
       if (!text) continue;
-      if (result.isFinal) finals.push(text);
-      else interim = text;
+      if (result.isFinal) finals.push(text); else interim = text;
     }
-
-    // Engines may resend earlier final segments after restarting recognition.
     let overlap = 0;
     for (let size = Math.min(previousFinals.length, finals.length); size > 0; size--) {
-      if (previousFinals.slice(-size).map(normalize).join(' ') === finals.slice(0, size).map(normalize).join(' ')) {
-        overlap = size;
-        break;
-      }
+      if (previousFinals.slice(-size).map(normalize).join(' ') === finals.slice(0, size).map(normalize).join(' ')) { overlap = size; break; }
     }
     const fresh = finals.slice(overlap);
     if (fresh.length) committedText = [committedText, ...fresh].filter(Boolean).join(' ');
@@ -86,30 +60,12 @@
     input.value = [baseText, committedText, interim].filter(Boolean).join(' ');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   };
-
-  recognition.onstart = () => {
-    restarting = false;
-    mic.classList.add('active');
-    mic.title = 'Нажмите, чтобы выключить микрофон';
-    mic.setAttribute('aria-label', mic.title);
-  };
-  recognition.onresult = renderTranscript;
   recognition.onerror = event => {
-    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-      listening = false;
-      window.toast?.('Нет разрешения на микрофон. Проверьте настройки браузера.', 'err');
-    } else if (event.error !== 'aborted' && event.error !== 'no-speech') {
-      window.toast?.('Ошибка распознавания речи: ' + event.error, 'warn');
-    }
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') { listening = false; window.toast?.('Нет разрешения на микрофон. Проверьте настройки браузера.', 'err'); }
+    else if (event.error !== 'aborted' && event.error !== 'no-speech') window.toast?.('Ошибка распознавания речи: ' + event.error, 'warn');
   };
   recognition.onend = () => {
-    if (!listening) {
-      mic.classList.remove('active');
-      mic.title = 'Начать голосовой ввод';
-      mic.setAttribute('aria-label', mic.title);
-      restarting = false;
-      return;
-    }
+    if (!listening) { mic.classList.remove('active'); mic.title = 'Начать голосовой ввод'; mic.setAttribute('aria-label', mic.title); restarting = false; return; }
     if (restarting) return;
     restarting = true;
     restartTimer = window.setTimeout(() => {
@@ -120,21 +76,8 @@
     }, 180);
   };
   mic.addEventListener('click', () => {
-    if (listening) {
-      listening = false;
-      clearTimeout(restartTimer);
-      restarting = false;
-      recognition.stop();
-      return;
-    }
-    baseText = input.value.trim();
-    committedText = '';
-    previousFinals = [];
-    listening = true;
-    try { recognition.start(); }
-    catch (error) {
-      listening = false;
-      window.toast?.('Не удалось запустить микрофон: ' + error.message, 'err');
-    }
+    if (listening) { listening = false; clearTimeout(restartTimer); restarting = false; recognition.stop(); return; }
+    baseText = input.value.trim(); committedText = ''; previousFinals = []; listening = true;
+    try { recognition.start(); } catch (error) { listening = false; window.toast?.('Не удалось запустить микрофон: ' + error.message, 'err'); }
   });
 })();
